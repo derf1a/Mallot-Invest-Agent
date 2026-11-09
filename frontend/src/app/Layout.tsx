@@ -49,7 +49,7 @@ function Wordmark() {
 }
 
 // PC: 왼쪽 사이드바 고정 / 모바일: 좌상단 햄버거 버튼으로 여닫는 드로어
-export default function Layout() {
+export default function Layout({ onLogout }: { onLogout?: () => void }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const location = useLocation()
   const { data: health } = useLoad(() => systemApi.health().catch(() => null), [])
@@ -88,7 +88,10 @@ export default function Layout() {
             </div>
           ))}
         </div>
-        <div className="nav-utility">{UTILITY.map((item) => link(item, 'small'))}</div>
+        <div className="nav-utility">
+          {UTILITY.map((item) => link(item, 'small'))}
+          {onLogout && <button className="nav-link small nav-button" onClick={onLogout}>로그아웃</button>}
+        </div>
         <footer className="sidebar-footer">
           <BrandMark size={18} />
           <span className="footer-text">
