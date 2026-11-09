@@ -1,0 +1,21 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["react", "typescript", "oxc"],
+  "rules": {
+    "react/rules-of-hooks": "error",
+    "react/only-export-components": ["warn", { "allowConstantExport": true }]
+  },
+  "overrides": [
+    {
+      "files": ["src/shared/**"],
+      "rules": {
+        "no-restricted-imports": ["error", {
+          "patterns": [{
+            "group": ["**/features/**", "**/app/**"],
+            "message": "shared/ 는 여러 기능이 같이 쓰는 계층이라 기능(features/)·앱 뼈대(app/)를 import 하지 않는다"
+          }]
+        }]
+      }
+    }
+  ]
+}

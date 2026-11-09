@@ -1,0 +1,11 @@
+/* 금액·숫자는 Space Grotesk + 고정폭 숫자 */
+.stat-row strong, .stat-tile strong, .tx-amount, .rgroup-total, .rrow-right strong, .period-label, .budget-head span:last-child,
+.tx-day-cell, .cal-day, .run-id, .stage-metric, .barlist-value {
+  font-family: var(--font-display);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+.stat-row strong { font-weight: 650; }
+.log-box { font-family: var(--font-mono); }
+.topbar .brand-mark { margin-right: 2px; }
+.topbar-title { font-family: var(--font-display); letter-spacing: -0.01em; }

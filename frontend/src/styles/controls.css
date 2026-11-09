@@ -1,0 +1,37 @@
+/* ---------- settings ---------- */
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); overflow-x: auto; scrollbar-width: none; }
+.tabs button { white-space: nowrap; flex-shrink: 0; border: none; border-bottom: 2px solid transparent; border-radius: 0; background: none; }
+.tabs button.on { border-bottom-color: var(--accent); color: var(--accent); font-weight: 600; }
+.edit-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; padding: 6px 0; border-bottom: 1px solid var(--border); }
+.edit-row:last-child { border-bottom: none; }
+.edit-row.inactive { opacity: 0.55; }
+.edit-row input { flex: 1 1 140px; }
+.edit-row .w-name { flex: 1 1 120px; }
+.edit-row .w-desc { flex: 2 1 160px; }
+.edit-row .w-amount { flex: 0 1 120px; }
+.search { width: 100%; margin-bottom: 8px; }
+.rule-key { font-weight: 600; min-width: 120px; }
+.kv { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; margin: 0; }
+.kv dt { color: var(--muted); }
+.kv dd { margin: 0; }
+.icon-picker { position: relative; }
+.icon-picker > button { width: 44px; padding: 6px 0; font-size: 1.2rem; }
+.icon-grid {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 60;
+  display: grid;
+  grid-template-columns: repeat(8, 36px);
+  gap: 2px;
+  padding: 8px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 6px 20px rgb(0 0 0 / 0.18);
+}
+.icon-grid button { width: 36px; height: 36px; padding: 0; border: none; font-size: 1.2rem; background: none; }
+.icon-grid button:hover, .icon-grid button.on { background: var(--accent-soft); }
+.icon-grid input { grid-column: 1 / -1; margin-top: 4px; }
+.section-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.section-head button { white-space: nowrap; flex-shrink: 0; }
