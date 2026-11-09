@@ -1,4 +1,6 @@
 /* ---------- Observe: Agents · Graph · Traces ---------- */
+/* 그래프 · 워터폴은 넓을수록 잘 읽힌다 — 이 화면들은 본문 최대 폭을 풀어 준다 */
+.content:has(.observe-page) { max-width: none; }
 .observe-split { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 12px; align-items: start; }
 .agents-split { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 12px; align-items: start; }
 .trace-split { display: grid; grid-template-columns: 340px minmax(0, 1fr); gap: 12px; align-items: start; }
@@ -11,7 +13,8 @@
 
 /* 그래프 */
 .graph-card { overflow: hidden; display: flex; flex-direction: column; gap: 8px; }
-.graph-scroll { overflow: auto; max-height: 72vh; border-radius: 8px; background: var(--surface); }
+.graph-scroll { position: relative; overflow: auto; max-height: 76vh; border-radius: 8px; background: var(--surface); }
+.graph-fit { position: sticky; top: 6px; left: 6px; z-index: 1; float: right; margin: 6px; font-size: 0.75rem; padding: 3px 8px; }
 .graph-svg { display: block; font-family: var(--font-body); }
 .g-node rect { fill: var(--card); stroke: var(--border); stroke-width: 1.2; }
 .g-node.clickable { cursor: pointer; }
@@ -128,6 +131,10 @@ pre.prompt { border: 1px solid var(--border); border-radius: 8px; margin-top: 4p
 .span-panel details { margin-top: 8px; }
 .span-panel summary { cursor: pointer; font-weight: 600; }
 
+@media (max-width: 1800px) {
+  .observe-split { grid-template-columns: minmax(0, 1fr); }
+  .observe-side { position: static; }
+}
 @media (max-width: 900px) {
   .observe-split, .agents-split, .trace-split, .links-grid { grid-template-columns: minmax(0, 1fr); }
   .observe-side, .agent-list, .trace-list { position: static; max-height: none; }

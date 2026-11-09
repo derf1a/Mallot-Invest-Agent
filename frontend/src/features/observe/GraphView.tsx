@@ -45,6 +45,7 @@ export default function GraphView({ nodes, edges, onNode, selected }: {
   selected?: string | null
 }) {
   const [hover, setHover] = useState<string | null>(null)
+  const [fit, setFit] = useState(true)  // 칸 폭에 맞춰 줄여 보기 ↔ 실제 크기(가로 스크롤)
   const pos = useMemo(() => new Map(nodes.map((n) => [n.id, { x: PAD_X + n.col * COL_W, y: PAD + n.row * ROW_H }])), [nodes])
   const width = Math.max(...nodes.map((n) => PAD_X + n.col * COL_W + NODE_W), 300) + PAD
   const height = Math.max(...nodes.map((n) => PAD + n.row * ROW_H + NODE_H), 120) + PAD
@@ -56,7 +57,9 @@ export default function GraphView({ nodes, edges, onNode, selected }: {
 
   return (
     <div className="graph-scroll">
-      <svg className="graph-svg" width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="img"
+      <button className="small graph-fit" onClick={() => setFit(!fit)}>{fit ? '실제 크기' : '칸에 맞추기'}</button>
+      <svg className="graph-svg" width={fit ? '100%' : width} height={fit ? undefined : height} viewBox={`0 0 ${width} ${height}`}
+        style={fit ? { maxWidth: width } : undefined} role="img"
         aria-label={`노드 ${nodes.length}개, 선 ${edges.length}개`}>
         <defs>
           {Object.keys(EDGE_KIND_LABEL).map((k) => (
