@@ -8,6 +8,9 @@ const Portfolio = lazy(() => import('./features/invest/PortfolioPage'))
 const AiTrading = lazy(() => import('./features/invest/AiTradingPage'))
 const Team = lazy(() => import('./features/invest/TeamPage'))
 const Settings = lazy(() => import('./features/settings/SettingsPage'))
+const Agents = lazy(() => import('./features/observe/AgentsPage'))
+const Graph = lazy(() => import('./features/observe/GraphPage'))
+const Traces = lazy(() => import('./features/observe/TracesPage'))
 
 const page = (el: ReactNode) => <Suspense fallback={<p className="muted">불러오는 중…</p>}>{el}</Suspense>
 
@@ -20,6 +23,9 @@ export default function App() {
         <Route path="invest/portfolio" element={page(<Portfolio />)} />
         <Route path="invest/ai" element={page(<AiTrading />)} />
         <Route path="invest/team" element={page(<Team />)} />
+        <Route path="observe/agents" element={page(<Agents />)} />
+        <Route path="observe/graph" element={page(<Graph />)} />
+        <Route path="observe/traces" element={page(<Traces />)} />
         <Route path="settings" element={page(<Settings />)} />
         <Route path="*" element={<Navigate to="/invest/ai" replace />} />
       </Route>
