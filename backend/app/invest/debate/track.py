@@ -112,3 +112,38 @@ def scores(conn: sqlite3.Connection, p, now: datetime) -> dict[str, dict]:
         out[agent] = {"judged": len(edges), "wins": wins, "hit": round(wins / len(edges), 3), "excess": round(sum(edges) / len(edges), 4),
                       "skill": skill_of(wins, len(edges))}
     return out
+
+
+LIVE_ORDERS = ("open", "partial", "filled")  # 실제로 나간 주문 (승인 대기 · 거절 · 취소 · 실패는 빼고)
+
+
+def influence(conn: sqlite3.Connection, skills: dict[str, float]) -> dict[str, dict]:
+    """에이전트별 실제 표의 무게 — 최근 RECENT 개 입장(오늘 것 포함)으로.
+    {key: {views, buy, sell, avg_confidence, avg_weight, share, with_orders, against_orders}}
+    - avg_weight: 평균 (확신 ÷ CONVICTION_UNIT × 지금 성과 배수) — 상시 운용 입장판에서 이 에이전트 한 표의 크기
+    - share: 모든 에이전트 무게 합 가운데 이 에이전트 몫
+    - with_orders · against_orders: 같은 날 같은 종목에 에이전트 주문이 실제로 나갔을 때 그 주문과 같은 편 · 반대편이었던 입장 수
+    """
+    rows = conn.execute("SELECT agent, symbol, day, stance, confidence FROM invest_agent_views ORDER BY id DESC LIMIT ?", (RECENT,)).fetchall()
+    placed = {(o["symbol"], o["day"], o["side"]) for o in conn.execute(
+        f"SELECT symbol, side, substr(created_at, 1, 10) AS day FROM invest_orders WHERE source = 'agent' AND status IN ({','.join('?' * len(LIVE_ORDERS))})",
+        LIVE_ORDERS)}
+    traded = {(s, d) for s, d, _ in placed}
+    acc: dict[str, dict] = {}
+    total = 0.0
+    for r in rows:
+        w = weight(r["confidence"], skills.get(r["agent"], 1.0))
+        a = acc.setdefault(r["agent"], {"views": 0, "buy": 0, "sell": 0, "conf": 0.0, "weight": 0.0, "with_orders": 0, "against_orders": 0})
+        a["views"] += 1
+        a[r["stance"]] += 1
+        a["conf"] += r["confidence"]
+        a["weight"] += w
+        total += w
+        if (r["symbol"], r["day"]) in traded:
+            a["with_orders" if (r["symbol"], r["day"], r["stance"]) in placed else "against_orders"] += 1
+    out = {}
+    for agent, a in acc.items():
+        conf, wsum = a.pop("conf"), a.pop("weight")
+        out[agent] = {**a, "avg_confidence": round(conf / a["views"], 3), "avg_weight": round(wsum / a["views"], 3),
+                      "share": round(wsum / total, 3) if total else 0.0}
+    return out

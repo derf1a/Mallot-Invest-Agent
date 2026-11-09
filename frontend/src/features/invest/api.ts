@@ -318,6 +318,34 @@ export interface AgentOptions {
   max_candidates: number
 }
 
+/** 에이전트 성과 · 표의 무게 (/api/invest/agent-scores, 백엔드 debate/track.py) */
+export interface AgentScore {
+  /** 채점된 판단 수 (판단 뒤 끝난 거래일이 있는 것) · 맞힌 수 · 적중률 · 코스피 대비 평균 초과수익(방향 반영) · 성과 배수 */
+  judged: number; wins: number; hit: number; excess: number; skill: number
+}
+export interface AgentInfluence {
+  /** 최근 입장 수 (매수 · 매도) */
+  views: number; buy: number; sell: number
+  avg_confidence: number
+  /** 평균 한 표의 무게 = 확신 ÷ conviction_unit × 지금 성과 배수 */
+  avg_weight: number
+  /** 전체 무게 가운데 이 에이전트 몫 (0~1) */
+  share: number
+  /** 같은 날 같은 종목에 실제로 나간 에이전트 주문과 같은 편 · 반대편이었던 입장 수 */
+  with_orders: number; against_orders: number
+}
+export interface AgentScores {
+  scores: Record<string, AgentScore>
+  influence: Record<string, AgentInfluence>
+  horizon: number
+  benchmark: string
+  rules: {
+    mode: 'continuous' | 'meetings'
+    conviction_unit: number; min_skill: number; max_skill: number; prior: number; recent: number
+    propose_min: number; for_min: number; against_max: number; max_oppose_share: number
+  }
+}
+
 export interface AgentsResponse {
   roster: Agent[]
   tools: ToolInfo[]
@@ -1019,6 +1047,7 @@ export const investApi = {
   report: (id: number) => request<ReportDetail>('GET', `/api/invest/reports/${id}`),
 
   agents: () => request<AgentsResponse>('GET', '/api/invest/agents'),
+  agentScores: () => request<AgentScores>('GET', '/api/invest/agent-scores'),
   saveAgents: (roster: Agent[]) => request<AgentsResponse>('PUT', '/api/invest/agents', { roster }),
   resetAgents: () => request<AgentsResponse>('POST', '/api/invest/agents/reset'),
   sessions: (symbol?: string, limit = 20) =>
