@@ -34,7 +34,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Any
 
-from app.invest import exits, valuation
+from app.invest.analysis import exits, valuation
 from app.invest.marketdata import indicators, market, news
 from app.invest.broker import config, portfolio, trading
 from app.invest.marketdata.market import MarketError

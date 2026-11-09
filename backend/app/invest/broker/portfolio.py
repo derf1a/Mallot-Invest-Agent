@@ -8,7 +8,7 @@ indicator_rows: AI Trading 현황 서랍의 보유 종목 지표 표.
 import sqlite3
 from concurrent.futures import ThreadPoolExecutor
 
-from app.invest import screening
+from app.invest.analysis import screening
 from app.invest.marketdata import market as market_mod
 from app.invest.broker import trading
 from app.invest.marketdata.market import MarketError

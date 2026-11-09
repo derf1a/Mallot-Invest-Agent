@@ -25,7 +25,8 @@ from collections.abc import Awaitable, Callable
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 
-from app.invest import agents, assistant, autopilot, dart, desk, policy, scopes, scorelog, screening, valuation
+from app.invest import agents, assistant, autopilot, desk, policy, scopes
+from app.invest.analysis import dart, scorelog, screening, valuation
 from app.invest.marketdata import market, news
 from app.invest.broker import trading
 from app.invest.desk import CASH_KO, REGIME_KO

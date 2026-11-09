@@ -103,7 +103,7 @@ def test_scan_scope_screens_many_stocks(conn, broker):
 
 
 def test_screening_score_and_llm_pick(monkeypatch):
-    from app.invest import screening
+    from app.invest.analysis import screening
     m = {"trend": 1, "change_20d": 0.5, "change_5d": -0.01, "volume_ratio": 2.0, "rsi": 80, "change_1d": 0.0, "price": 1}
     assert screening.score(m, ["운용 지시", "거래대금 상위"]) == round(1 + 0.3 * 5 - 0.06 + 0.5 - 0.7 + 1.0 + 0.1, 2)
     assert screening.score(None, ["보유"]) is None

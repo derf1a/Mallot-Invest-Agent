@@ -3,7 +3,8 @@
 
 import pytest
 
-from app.invest import assistant, autopilot, briefing, desk, desk_agents, scopes, screening
+from app.invest import assistant, autopilot, briefing, desk, desk_agents, scopes
+from app.invest.analysis import screening
 from app.invest.marketdata.market import SampleMarket
 from tests.test_invest import PIN, at_open  # noqa: F401 — 장중 시각 고정 fixture
 from tests.test_invest_assistant import Fake, say, thread

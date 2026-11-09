@@ -16,7 +16,8 @@ def runs_sync(monkeypatch):
 def no_real_llm(monkeypatch):
     """테스트가 실제 LLM·뉴스를 부르지 않게 — 따로 가짜를 넣지 않은 투자 비서·회의록·일정 담당·운용 데스크는 실패로(코드 대체 경로를
     탄다), 뉴스 RSS 는 연결 실패로."""
-    from app.invest import advisor, assistant, autopilot, desk_agents, minutes, morning, screening
+    from app.invest import advisor, assistant, autopilot, desk_agents, minutes, morning
+    from app.invest.analysis import screening
     from app.invest.marketdata import news
     from app.llm.client import LLMError
 

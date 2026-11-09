@@ -10,7 +10,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import PlainTextResponse
 
 from app.core.db import get_conn
-from app.invest import scorelog, track, valuation
+from app.invest import track
+from app.invest.analysis import scorelog, valuation
 from app.invest.marketdata import market
 
 router = APIRouter(prefix="/api/invest", tags=["invest"])

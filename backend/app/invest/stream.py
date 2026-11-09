@@ -32,7 +32,8 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
-from app.invest import agents, assistant, autopilot, desk, exits, policy, scopes, screening, track
+from app.invest import agents, assistant, autopilot, desk, policy, scopes, track
+from app.invest.analysis import exits, screening
 from app.invest.marketdata import market
 from app.invest.broker import config, trading
 from app.invest.marketdata.market import MarketError

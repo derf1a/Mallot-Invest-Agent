@@ -23,9 +23,9 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime
 
-from app.invest import dart
+from app.invest.analysis import dart
 from app.invest.marketdata import market
-from app.invest.dart import DartError
+from app.invest.analysis.dart import DartError
 from app.invest.marketdata.market import MarketError
 from app.invest.broker.toss import TossError
 
