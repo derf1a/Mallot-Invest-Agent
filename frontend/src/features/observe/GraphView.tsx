@@ -28,6 +28,7 @@ const ROW_H = 74
 const NODE_W = 150
 const NODE_H = 48
 const PAD = 24
+const PAD_X = 70  // 같은 열끼리 잇는 선이 왼쪽으로 돌아 나갈 자리
 
 const NODE_KIND_LABEL: Record<string, string> = {
   human: '사람', agent: '에이전트', code: '코드 단계', store: '저장', data: '외부 자료',
@@ -44,11 +45,14 @@ export default function GraphView({ nodes, edges, onNode, selected }: {
   selected?: string | null
 }) {
   const [hover, setHover] = useState<string | null>(null)
-  const pos = useMemo(() => new Map(nodes.map((n) => [n.id, { x: PAD + n.col * COL_W, y: PAD + n.row * ROW_H }])), [nodes])
-  const width = Math.max(...nodes.map((n) => PAD + n.col * COL_W + NODE_W), 300) + PAD
+  const pos = useMemo(() => new Map(nodes.map((n) => [n.id, { x: PAD_X + n.col * COL_W, y: PAD + n.row * ROW_H }])), [nodes])
+  const width = Math.max(...nodes.map((n) => PAD_X + n.col * COL_W + NODE_W), 300) + PAD
   const height = Math.max(...nodes.map((n) => PAD + n.row * ROW_H + NODE_H), 120) + PAD
   const focus = hover ?? selected ?? null
   const near = (e: GEdge) => !focus || e.source === focus || e.target === focus
+  // 선이 많으면 이름이 겹친다 — 그때는 고르거나 마우스를 올린 노드의 선만 이름을 단다
+  const busy = edges.length > 16
+  const labelled = (e: GEdge) => !!e.label && (focus ? near(e) : !busy)
 
   return (
     <div className="graph-scroll">
@@ -66,20 +70,33 @@ export default function GraphView({ nodes, edges, onNode, selected }: {
           const b = pos.get(e.target)
           if (!a || !b) return null
           const forward = b.x > a.x + 1
-          const x1 = forward ? a.x + NODE_W : a.x + NODE_W / 2
-          const y1 = forward ? a.y + NODE_H / 2 : a.y + NODE_H
-          const x2 = forward ? b.x : b.x + NODE_W / 2
-          const y2 = forward ? b.y + NODE_H / 2 : b.y + (b.y >= a.y ? 0 : NODE_H)
-          const bend = forward ? Math.max(40, (x2 - x1) / 2) : 0
-          const d = forward
-            ? `M${x1} ${y1} C${x1 + bend} ${y1}, ${x2 - bend} ${y2}, ${x2} ${y2}`
-            : `M${x1} ${y1} C${x1 + 60} ${(y1 + y2) / 2}, ${x2 + 60} ${(y1 + y2) / 2}, ${x2} ${y2}`
-          const mx = forward ? (x1 + x2) / 2 : x1 + 48
-          const my = (y1 + y2) / 2
+          const sameCol = Math.abs(b.x - a.x) <= 1
+          let d: string
+          let mx: number
+          let my: number
+          if (forward) {
+            const x1 = a.x + NODE_W, y1 = a.y + NODE_H / 2, x2 = b.x, y2 = b.y + NODE_H / 2
+            const bend = Math.max(40, (x2 - x1) / 2)
+            d = `M${x1} ${y1} C${x1 + bend} ${y1}, ${x2 - bend} ${y2}, ${x2} ${y2}`
+            mx = (x1 + x2) / 2
+            my = (y1 + y2) / 2
+          } else if (sameCol) {
+            // 같은 열끼리(에이전트 사이 말)는 왼쪽으로 돌린다 — 오른쪽은 다음 열로 가는 선이 쓴다
+            const x1 = a.x, y1 = a.y + NODE_H / 2, x2 = b.x, y2 = b.y + NODE_H / 2
+            const out = 28 + Math.min(Math.abs(y2 - y1) / 6, 40)
+            d = `M${x1} ${y1} C${x1 - out} ${y1}, ${x2 - out} ${y2}, ${x2} ${y2}`
+            mx = x1 - out + 4
+            my = (y1 + y2) / 2
+          } else {
+            const x1 = a.x + NODE_W / 2, y1 = a.y + NODE_H, x2 = b.x + NODE_W / 2, y2 = b.y + (b.y >= a.y ? 0 : NODE_H)
+            d = `M${x1} ${y1} C${x1 + 60} ${(y1 + y2) / 2}, ${x2 + 60} ${(y1 + y2) / 2}, ${x2} ${y2}`
+            mx = x1 + 48
+            my = (y1 + y2) / 2
+          }
           return (
             <g key={i} className={`g-edge g-edge-${e.kind}${near(e) ? '' : ' dim'}`}>
               <path d={d} strokeWidth={Math.min(1.2 + (e.weight ?? 1) * 0.35, 5)} markerEnd={`url(#arrow-${e.kind})`} fill="none" />
-              {e.label && near(e) && (
+              {labelled(e) && (
                 <text x={mx} y={my - 4} textAnchor="middle" className="g-edge-label">{e.label}</text>
               )}
             </g>
