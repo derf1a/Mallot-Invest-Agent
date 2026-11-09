@@ -42,6 +42,7 @@ from app.invest.marketdata import market
 from app.invest.marketdata.market import MarketError
 from app.invest.ops import autopilot, desk
 from app.llm.client import LLMError
+from app.llm.routes import as_agent
 from app.system import issues
 
 TICK_SEC = 20
@@ -450,8 +451,9 @@ class Stream:
         async def speak(agent: dict) -> dict:
             mine = next((t for t in reversed(self.transcript) if t["agent"] == agent["key"]), None)
             try:
-                raw = await agents.LLM("agent_action", agents.system_prompt(agent, s), stream_prompt(s, self.n, trig, recent, board, self.answers),
-                                       agents.REBUTTAL_SCHEMA, agents.build_tools(s, agent["tools"], agent["key"]), self.model, 10)
+                with as_agent(agent["key"]):
+                    raw = await agents.LLM("agent_action", agents.system_prompt(agent, s), stream_prompt(s, self.n, trig, recent, board, self.answers),
+                                           agents.REBUTTAL_SCHEMA, agents.build_tools(s, agent["tools"], agent["key"]), self.model, 10)
                 st = agents.normalize_statement(raw, agent, self.n, mine, s.symbols)
             except LLMError as e:
                 st = agents.normalize_statement({}, agent, self.n, None, s.symbols)
@@ -497,8 +499,9 @@ class Stream:
             s = self._session(self._focus(re.findall(r"\b\d{6}\b", " ".join(asks))[:FOCUS]), f"리서치 담당 답변 — {who['name']}")
             s.titles[key] = who["title"]
             try:
-                raw = await agents.LLM("invest_desk", research_system(who), "에이전트들의 부탁:\n" + "\n".join(f"- {a}" for a in asks),
-                                       RESEARCH_SCHEMA, agents.build_tools(s, RESEARCH_TOOLS, key), self.model, POLL_TURNS)
+                with as_agent(key):
+                    raw = await agents.LLM("invest_desk", research_system(who), "에이전트들의 부탁:\n" + "\n".join(f"- {a}" for a in asks),
+                                           RESEARCH_SCHEMA, agents.build_tools(s, RESEARCH_TOOLS, key), self.model, POLL_TURNS)
             except LLMError as e:
                 self.ctx.log(f"{who['name']} 답변 실패: {e}", "warn")
                 continue
@@ -552,8 +555,9 @@ class Stream:
             again = ""
             for _ in range(POLL_TRIES):
                 try:
-                    raw = await agents.LLM("agent_action", agents.system_prompt(agent, s), prompt + again, agents.POLL_SCHEMA,
-                                           agents.build_tools(s, agent["tools"], agent["key"]), self.model, POLL_TURNS)
+                    with as_agent(agent["key"]):
+                        raw = await agents.LLM("agent_action", agents.system_prompt(agent, s), prompt + again, agents.POLL_SCHEMA,
+                                               agents.build_tools(s, agent["tools"], agent["key"]), self.model, POLL_TURNS)
                     st = agents.normalize_statement(raw, agent, self.n, mine, s.symbols)
                 except LLMError as e:
                     st = agents.normalize_statement({}, agent, self.n, None, s.symbols)
@@ -593,10 +597,11 @@ class Stream:
         s = self._session(focus, "트레이더 점검")
         board = self.board.text([c["symbol"] for c in focus], self.names, now)
         try:
-            raw = await agents.LLM("agent_action", agents.system_prompt(self.executor, s),
-                                   trader_review_prompt(s, board, MAX_DAY_ORDERS - len(self.orders)), agents.OPINION_SCHEMA,
-                                   agents.build_tools(s, [t for t in self.executor["tools"] if t != agents.EXECUTOR_TOOL],
-                                                      self.executor["key"]), self.model, 10)
+            with as_agent(self.executor["key"]):
+                raw = await agents.LLM("agent_action", agents.system_prompt(self.executor, s),
+                                       trader_review_prompt(s, board, MAX_DAY_ORDERS - len(self.orders)), agents.OPINION_SCHEMA,
+                                       agents.build_tools(s, [t for t in self.executor["tools"] if t != agents.EXECUTOR_TOOL],
+                                                          self.executor["key"]), self.model, 10)
         except LLMError as e:
             self.ctx.log(f"트레이더 점검 실패: {e}", "warn")
             return
@@ -640,8 +645,9 @@ class Stream:
         self.chat({"type": "trader_start", "agent": self.executor["key"], "title": self.executor["title"]})
         board = self.board.text(s.symbols, self.names, now)
         try:
-            raw = await agents.LLM("agent_action", agents.system_prompt(self.executor, s), trade_prompt(s, gate, board, why, left),
-                                   agents.TRADER_SCHEMA, agents.build_tools(s, self.executor["tools"], self.executor["key"]), self.model, 14)
+            with as_agent(self.executor["key"]):
+                raw = await agents.LLM("agent_action", agents.system_prompt(self.executor, s), trade_prompt(s, gate, board, why, left),
+                                       agents.TRADER_SCHEMA, agents.build_tools(s, self.executor["tools"], self.executor["key"]), self.model, 14)
             decision = agents.normalize_decision(raw, s, self.executor)
         except (LLMError, TypeError, ValueError) as e:
             decision = {"decisions": [], "decision": "hold", "quantity": 0, "rationale": f"트레이더 응답 실패 — 행동 안 함 ({e})"[:300],

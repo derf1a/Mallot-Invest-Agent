@@ -43,6 +43,7 @@ from app.invest.marketdata import market
 from app.invest.marketdata.market import MarketError
 from app.invest.ops import autopilot, briefing, desk
 from app.llm.client import LLMError, ToolDef, agentic
+from app.llm.routes import as_agent
 from app.system import issues
 
 log = logging.getLogger("uvicorn.error")
@@ -373,8 +374,9 @@ def build_tools(conn: sqlite3.Connection, s: agents.Session, used: list[str], mo
         prompt = (f"관리자가 비서를 통해 묻습니다:\n{question}\n\n당신의 성향과 도구로 필요한 자료를 확인한 뒤 answer 에 짧게(3~6문장) "
                   "답하세요. 토론이 아니므로 views 는 내지 않습니다. 도구 결과에 없는 숫자는 쓰지 마세요.")
         try:
-            raw = await LLM("invest_assistant", agents.system_prompt(agent, sub), prompt, ANSWER_SCHEMA,
-                            agents.build_tools(sub, agent["tools"], agent["key"]), model, AGENT_TURNS)
+            with as_agent(agent["key"]):
+                raw = await LLM("invest_assistant", agents.system_prompt(agent, sub), prompt, ANSWER_SCHEMA,
+                                agents.build_tools(sub, agent["tools"], agent["key"]), model, AGENT_TURNS)
         except LLMError as e:
             note(f"ask_agent:{agent['key']}", False)
             return {"ok": False, "error": f"{agent['title']} 응답 실패: {e}"}
@@ -672,8 +674,9 @@ async def respond(conn: sqlite3.Connection, msg_id: int, header: str = "관리�
     s.titles[KEY] = TITLE
     used: list[str] = []
     model = config.agent_options(conn)["model"] or None
-    raw = await LLM("invest_assistant", SYSTEM, _context(conn, msg_id, header, message), REPLY_SCHEMA, build_tools(conn, s, used, model),
-                    model, MAX_TURNS)
+    with as_agent(KEY):
+        raw = await LLM("invest_assistant", SYSTEM, _context(conn, msg_id, header, message), REPLY_SCHEMA, build_tools(conn, s, used, model),
+                        model, MAX_TURNS)
     reply = str((raw or {}).get("reply") or "").strip()
     if not reply:
         raise ValueError("빈 답")

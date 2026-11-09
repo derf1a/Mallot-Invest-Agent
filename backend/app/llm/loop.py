@@ -1,19 +1,36 @@
-"""로컬 LLM 으로 structured()·agentic() 을 흉내 낸다 (client.py 가 공급자에 따라 부른다).
+"""채팅 API 하나로 structured()·agentic() 을 흉내 내는 루프 — 로컬 MLX · vLLM 이 같이 쓴다 (client.py 가 경로에 따라 부른다).
 
-- 구조화 출력: Claude 처럼 서버가 형식을 강제하지 못하므로 스키마를 시스템 프롬프트에 넣고, 답에서 JSON 을 꺼내
-  스키마를 검사한다. 틀리면 무엇이 틀렸는지 알려 주고 다시 받는다 (max_turns 안에서).
-- 도구: 모델 채팅 템플릿의 도구 호출 형식으로 앱 도구(ToolDef)를 주고, 호출이 오면 이 프로세스에서 실행해 결과를 돌려준다.
-  도구 호출이 없는 답이 최종 답이다. 이전 턴은 생성된 글 그대로 다시 넣어 작업 프로세스가 KV 캐시를 이어 쓰게 한다.
+- 구조화 출력: 스키마를 시스템 프롬프트에 넣고, 답에서 JSON 을 꺼내 스키마를 검사한다. 틀리면 무엇이 틀렸는지 알려 주고
+  다시 받는다 (max_turns 안에서). 서버가 형식을 강제할 수 있으면(vLLM response_format) 그것도 쓴다 — 검사는 그대로.
+- 도구: 백엔드의 도구 호출 형식으로 앱 도구(ToolDef)를 주고, 호출이 오면 이 프로세스에서 실행해 결과를 돌려준다.
+  도구 호출이 없는 답이 최종 답이다. 이전 턴을 어떻게 다시 넣을지는 백엔드가 정한다 (MLX 는 생성된 글 그대로 → KV 캐시 재사용).
 - 사용량은 호출(여러 턴) 하나를 한 건으로 남긴다: 새로 읽은 입력 토큰 / 재사용한 캐시 토큰 / 출력 토큰, 요금 없음.
 """
 
 import json
 import time
+from typing import Protocol
 
-from app.llm import local
 from app.llm.client import LLMError, ToolDef, record
 
-PROVIDER = "mlx-lm"
+
+class Backend(Protocol):
+    """채팅 한 턴을 보내는 쪽. chat() 은 정규화한 dict 를 돌려준다:
+    content · reasoning · tool_calls[{id?, name, arguments, error?}] · tool_call_errors · usage{prompt_tokens, cached_tokens,
+    output_tokens} · timing{prefill_ms, generate_ms} · finish_reason."""
+
+    provider: str                     # llm_usage.provider ('mlx-lm' · 'vllm')
+    supports_response_format: bool    # 서버가 JSON Schema 로 출력을 강제할 수 있나
+
+    def model_name(self) -> str: ...
+    def max_tokens(self) -> int: ...
+    def temperature(self) -> float | None: ...
+    async def chat(self, messages: list[dict], *, tools: list[dict] | None = None, max_tokens: int = 4096,
+                   temperature: float | None = None, response_format: dict | None = None) -> dict: ...
+    def assistant_message(self, res: dict) -> dict: ...
+    def tool_message(self, call: dict | None, content: str) -> dict: ...
+
+
 TOOL_RESULT_CHARS = 12_000  # 로컬 모델은 문맥이 작아 도구 결과 하나가 KV 캐시를 다 먹지 않게 자른다
 
 
@@ -137,59 +154,48 @@ class _Usage:
         self.gen_ms += int(t.get("prefill_ms") or 0) + int(t.get("generate_ms") or 0)
         self.turns += 1
 
-    def save(self, feature: str, ok: bool, error: str | None) -> None:
-        record(feature=feature, model=local.model_name(), provider=PROVIDER,
+    def save(self, backend: Backend, feature: str, ok: bool, error: str | None) -> None:
+        record(feature=feature, model=backend.model_name(), provider=backend.provider,
                usage={"input_tokens": self.input, "output_tokens": self.output, "cache_read_input_tokens": self.cached},
                cost_usd=None, duration_ms=int((time.perf_counter() - self.started) * 1000),
                api_duration_ms=self.gen_ms or None, turns=self.turns, ok=ok, error=error)
 
 
-def _max_tokens() -> int:
-    return 4096 if local.options()["thinking"] == "off" else 12288
-
-
 # ---------- structured / agentic ----------
 
-async def structured(feature: str, prompt: str | list[dict], schema: dict, *, system_prompt: str | None = None,
-                     max_turns: int = 3) -> dict:
+async def structured(feature: str, prompt: str | list[dict], schema: dict, *, backend: Backend,
+                     system_prompt: str | None = None, max_turns: int = 3) -> dict:
     usage = _Usage()
+    fmt = ({"type": "json_schema", "json_schema": {"name": "answer", "schema": schema}}
+           if backend.supports_response_format else None)
     messages = [{"role": "system", "content": "\n\n".join(p for p in (system_prompt, format_rules(schema)) if p)},
                 {"role": "user", "content": _text(prompt)}]
     errors: list[str] = []
     try:
         for _ in range(max(1, max_turns)):
-            res = await local.chat(messages, max_tokens=_max_tokens(), temperature=_temperature())
+            kw = {"response_format": fmt} if fmt else {}
+            res = await backend.chat(messages, max_tokens=backend.max_tokens(), temperature=backend.temperature(), **kw)
             usage.add(res)
             value, errors = _parse(res["content"], schema)
             if value is not None:
-                usage.save(feature, True, None)
+                usage.save(backend, feature, True, None)
                 return value
             errors = _errors(res, errors)
-            messages += [_assistant(res), {"role": "user", "content": _fix_request(errors)}]
+            messages += [backend.assistant_message(res), {"role": "user", "content": _fix_request(errors)}]
     except LLMError as e:
-        usage.save(feature, False, str(e))
+        usage.save(backend, feature, False, str(e))
         raise
     error = "형식에 맞는 답을 받지 못했어요: " + "; ".join(errors[:3])
-    usage.save(feature, False, error)
+    usage.save(backend, feature, False, error)
     raise LLMError(error)
-
-
-def _temperature() -> float | None:
-    """생각 모드가 꺼져 있으면 형식을 지키도록 거의 탐욕적으로 고른다 (낮은 비트 모델은 샘플링에 약하다)."""
-    return 0.2 if local.options()["thinking"] == "off" else None
-
-
-def _assistant(res: dict) -> dict:
-    """생성된 글 그대로(도구 호출 XML 포함) 다시 넣는다 — 템플릿이 같은 토큰을 만들어 KV 캐시를 이어 쓸 수 있게."""
-    return {"role": "assistant", "content": res["content"], "reasoning_content": res.get("reasoning") or ""}
 
 
 TOOL_RULES = ("## 도구\n필요한 자료는 주어진 도구로 확인하세요. 도구를 부를 때는 도구 호출만 쓰고, 결과를 본 뒤 이어서 판단합니다. "
               "더 확인할 것이 없으면 도구를 부르지 말고 최종 답만 출력하세요.")
 
 
-async def agentic(feature: str, prompt: str, schema: dict, *, tools: list[ToolDef], system_prompt: str | None = None,
-                  max_turns: int = 10) -> dict:
+async def agentic(feature: str, prompt: str, schema: dict, *, tools: list[ToolDef], backend: Backend,
+                  system_prompt: str | None = None, max_turns: int = 10) -> dict:
     usage = _Usage()
     by_name = {t.name: t for t in tools}
     specs = [{"type": "function", "function": {"name": t.name, "description": t.description,
@@ -201,27 +207,30 @@ async def agentic(feature: str, prompt: str, schema: dict, *, tools: list[ToolDe
         for turn in range(max(1, max_turns)):
             if turn == max_turns - 1 and turn > 0:
                 messages.append({"role": "user", "content": "도구는 그만 쓰고 지금까지 본 자료로 최종 JSON 만 출력하세요."})
-            res = await local.chat(messages, tools=specs or None, max_tokens=_max_tokens(), temperature=_temperature())
+            res = await backend.chat(messages, tools=specs or None, max_tokens=backend.max_tokens(),
+                                     temperature=backend.temperature())
             usage.add(res)
             calls, call_errors = res.get("tool_calls") or [], res.get("tool_call_errors") or []
             if calls or call_errors:
-                messages.append(_assistant(res))
+                messages.append(backend.assistant_message(res))
                 for call in calls:
-                    messages.append({"role": "tool", "content": await _run_tool(by_name, call)})
+                    content = (f"오류: 도구 호출 형식이 틀렸어요 — {call['error']}" if call.get("error")
+                               else await _run_tool(by_name, call))
+                    messages.append(backend.tool_message(call, content))
                 for err in call_errors:
-                    messages.append({"role": "tool", "content": f"오류: 도구 호출 형식이 틀렸어요 — {err}"})
+                    messages.append(backend.tool_message(None, f"오류: 도구 호출 형식이 틀렸어요 — {err}"))
                 continue
             value, errors = _parse(res["content"], schema)
             if value is not None:
-                usage.save(feature, True, None)
+                usage.save(backend, feature, True, None)
                 return value
             errors = _errors(res, errors)
-            messages += [_assistant(res), {"role": "user", "content": _fix_request(errors)}]
+            messages += [backend.assistant_message(res), {"role": "user", "content": _fix_request(errors)}]
     except LLMError as e:
-        usage.save(feature, False, str(e))
+        usage.save(backend, feature, False, str(e))
         raise
     error = f"{max_turns}턴 안에 형식에 맞는 최종 답을 받지 못했어요" + (": " + "; ".join(errors[:3]) if errors else "")
-    usage.save(feature, False, error)
+    usage.save(backend, feature, False, error)
     raise LLMError(error)
 
 

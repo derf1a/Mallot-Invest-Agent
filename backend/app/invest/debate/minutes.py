@@ -11,6 +11,7 @@ import re
 from collections.abc import Awaitable, Callable
 
 from app.llm.client import structured
+from app.llm.routes import as_agent
 
 STANCE_KO = {"buy": "매수", "sell": "매도", "none": "의견 없음"}
 SIDE_KO = {"buy": "매수", "sell": "매도"}
@@ -125,5 +126,6 @@ def clean(raw: dict, f: dict) -> dict:
 
 
 async def write(f: dict, model: str | None) -> dict:
-    raw = await LLM("invest_assistant", SYSTEM, prompt(f), SCHEMA, model)
+    with as_agent("assistant"):
+        raw = await LLM("invest_assistant", SYSTEM, prompt(f), SCHEMA, model)
     return clean(raw if isinstance(raw, dict) else {}, f)

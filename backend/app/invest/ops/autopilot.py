@@ -35,6 +35,7 @@ from app.invest.broker.toss import TossError
 from app.invest.marketdata import market
 from app.invest.marketdata.market import MarketError
 from app.llm.client import structured
+from app.llm.routes import as_agent
 from app.runs.runner import run_dict, start_run
 
 S_CONFIG = "invest_autopilot"
@@ -551,7 +552,8 @@ def plan_prompt(conn: sqlite3.Connection, now: datetime, window: tuple[str, str]
 
 async def plan_next(conn: sqlite3.Connection, now: datetime, window: tuple[str, str], summary: str,
                     model: str | None = None) -> dict:
-    raw = await PLANNER("agent_action", PLAN_SYSTEM, plan_prompt(conn, now, window, summary), PLAN_SCHEMA, model)
+    with as_agent("scheduler"):
+        raw = await PLANNER("agent_action", PLAN_SYSTEM, plan_prompt(conn, now, window, summary), PLAN_SCHEMA, model)
     return raw if isinstance(raw, dict) else {}
 
 

@@ -34,7 +34,7 @@ S_AGENT_AUTO = "invest_agent_auto_approve"  # 에이전트(트레이더) 주문�
 S_HALTED = "invest_halted"                  # 전체 주문 중지
 S_AGENT_OPTIONS = "invest_agent_options"    # 에이전트 토론 설정 (실험실): 라운드·모델·후보 종목 수
 DEFAULT_AGENT_OPTIONS = {"rounds": 2, "model": "", "max_candidates": 6}
-_MODEL_RE = re.compile(r"^(claude-[a-z0-9.\-]{2,60}|local)?$")  # 비우면 설정 > LLM 의 기본 LLM, local = 로컬 LLM
+_MODEL_RE = re.compile(r"^(claude-[a-z0-9.\-]{2,60}|local|mlx|vllm(:[A-Za-z0-9._/\-]{1,120})?)?$")  # 비우면 LLM 경로 설정, local·mlx = 로컬, vllm[:모델]
 
 
 class ConfigError(Exception):

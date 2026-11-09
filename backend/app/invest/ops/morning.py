@@ -23,6 +23,7 @@ from app.invest.marketdata import market
 from app.invest.marketdata.market import MarketError
 from app.invest.ops import briefing
 from app.llm.client import LLMError, structured
+from app.llm.routes import as_agent
 from app.system import issues
 
 S_CONFIG = "invest_morning_briefing"
@@ -147,7 +148,8 @@ def send(conn: sqlite3.Connection, now: datetime | None = None, provider=None, m
     data = briefing.snapshot(conn, provider, now)
     data["title"] = "아침 브리핑"
     try:
-        raw = asyncio.run(LLM("invest_assistant", SYSTEM, briefing.to_text(data), SCHEMA, model))
+        with as_agent("assistant"):
+            raw = asyncio.run(LLM("invest_assistant", SYSTEM, briefing.to_text(data), SCHEMA, model))
         comment = issues.strip_notes(str((raw or {}).get("comment") or ""))[:600]
     except (LLMError, TypeError, ValueError):
         comment = ""

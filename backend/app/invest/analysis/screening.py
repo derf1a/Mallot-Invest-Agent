@@ -25,6 +25,7 @@ from app.invest.broker.toss import TossError
 from app.invest.marketdata import indicators, watch
 from app.invest.marketdata.market import MarketError
 from app.llm.client import LLMError, structured
+from app.llm.routes import as_agent
 
 SECTOR_TOP = 5
 SECTOR_MID = 3    # 섹터의 시가총액 상위 밖에서 거래대금 상위 — 중소형주가 후보에 들어오는 길
@@ -337,15 +338,17 @@ LLM: PickLlm = _default_llm  # 테스트에서 가짜로 바꾼다
 
 
 def llm_pick(rows: list[dict], intents: str, n: int, model: str | None = None, *, context: str = "",
-             system: str = PICK_SYSTEM, feature: str = "agent_action", ask: str = "이번 회의 후보", strict: bool = False) -> dict:
+             system: str = PICK_SYSTEM, feature: str = "agent_action", ask: str = "이번 회의 후보", strict: bool = False,
+             agent: str = "portfolio") -> dict:
     """LLM 이 고른다 — 표에 없는 종목은 버리고 모자라면 점수 순으로 채운다. 실패하면 code_pick.
     context = 운용 데스크 리서치 요약(시장 국면·섹터·발굴 이유), system·feature·ask = 고르는 사람(회의 후보 / 발굴 목록).
-    strict = 한 섹터 MAX_PER_SECTOR 개를 코드가 강제 (넘친 종목은 dropped 에 이유)."""
+    strict = 한 섹터 MAX_PER_SECTOR 개를 코드가 강제 (넘친 종목은 dropped 에 이유). agent = 고르는 에이전트 (LLM 경로 · 트레이스)."""
     prompt = (f"{ask} {n}개를 고르세요.\n\n운용 지시:\n{intents or '없음'}\n"
               + (f"\n리서치 데스크:\n{context}\n" if context else "")
               + f"\n점수표 (점수 높은 순, {len(rows)}종목 중 {min(len(rows), TABLE_ROWS)}개):\n{table(rows)}")
     try:
-        raw = asyncio.run(LLM(feature, system, prompt, PICK_SCHEMA, model))
+        with as_agent(agent):
+            raw = asyncio.run(LLM(feature, system, prompt, PICK_SCHEMA, model))
     except (LLMError, TypeError, ValueError):
         return code_pick(rows, n, strict=strict)
     by_sym = {r["symbol"]: r for r in rows}

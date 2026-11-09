@@ -409,3 +409,33 @@ def status() -> dict:
     opts = options()
     return {"provider": provider(), "options": opts, "models": [model_status(k) for k in CATALOG],
             "worker": worker_status(), "memory": memory_info()}
+
+
+# ---------- loop.Backend ----------
+
+class MlxBackend:
+    """loop.structured·agentic 이 쓰는 로컬 MLX 백엔드 (작업 프로세스 하나, 지금 고른 모델)."""
+
+    provider = "mlx-lm"
+    supports_response_format = False  # 작업 프로세스는 형식을 강제하지 못한다 — 프롬프트 + 검사 + 다시 받기
+
+    def model_name(self) -> str:
+        return model_name()
+
+    def max_tokens(self) -> int:
+        return 4096 if options()["thinking"] == "off" else 12288
+
+    def temperature(self) -> float | None:
+        """생각 모드가 꺼져 있으면 형식을 지키도록 거의 탐욕적으로 고른다 (낮은 비트 모델은 샘플링에 약하다)."""
+        return 0.2 if options()["thinking"] == "off" else None
+
+    async def chat(self, messages: list[dict], *, tools: list[dict] | None = None, max_tokens: int = 4096,
+                   temperature: float | None = None, response_format: dict | None = None) -> dict:
+        return await chat(messages, tools=tools, max_tokens=max_tokens, temperature=temperature)
+
+    def assistant_message(self, res: dict) -> dict:
+        """생성된 글 그대로(도구 호출 XML 포함) 다시 넣는다 — 템플릿이 같은 토큰을 만들어 KV 캐시를 이어 쓸 수 있게."""
+        return {"role": "assistant", "content": res["content"], "reasoning_content": res.get("reasoning") or ""}
+
+    def tool_message(self, call: dict | None, content: str) -> dict:
+        return {"role": "tool", "content": content}

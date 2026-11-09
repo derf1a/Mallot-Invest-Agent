@@ -7,7 +7,7 @@ import claude_agent_sdk
 import pytest
 
 from app.core.db import connect
-from app.llm import client as llm, local, local_run
+from app.llm import client as llm, local, loop
 from app.llm.mlx_worker import kv_plan, looping, split_reasoning, tool_blocks
 from tests.sdk_fakes import fake_query, ok_result, usage_rows
 
@@ -81,20 +81,20 @@ def test_reasoning_and_tool_blocks():
 
 
 def test_extract_json_and_schema_check():
-    assert local_run.extract_json('```json\n{"a": 1}\n```') == {"a": 1}
-    assert local_run.extract_json('결과입니다: {"a": [1, 2]} 끝') == {"a": [1, 2]}
-    assert local_run.extract_json('{"s": "첫 줄\n둘째 줄"}'.replace("\\n", "\n")) == {"s": "첫 줄\n둘째 줄"}
+    assert loop.extract_json('```json\n{"a": 1}\n```') == {"a": 1}
+    assert loop.extract_json('결과입니다: {"a": [1, 2]} 끝') == {"a": [1, 2]}
+    assert loop.extract_json('{"s": "첫 줄\n둘째 줄"}'.replace("\\n", "\n")) == {"s": "첫 줄\n둘째 줄"}
     with pytest.raises(ValueError):
-        local_run.extract_json("JSON 없음")
+        loop.extract_json("JSON 없음")
     schema = {"type": "object", "additionalProperties": False, "required": ["kind", "n"],
               "properties": {"kind": {"type": "string", "enum": ["buy", "sell"]}, "n": {"type": "integer", "minimum": 1},
                              "tags": {"type": "array", "items": {"type": "string"}, "maxItems": 2}}}
     value = {"kind": "buy", "n": 2.0, "extra": "x"}
-    assert local_run.check(value, schema) == [] and "extra" not in value  # 모르는 키는 지운다
-    errors = local_run.check({"kind": "hold", "tags": ["a", "b", 3]}, schema)
+    assert loop.check(value, schema) == [] and "extra" not in value  # 모르는 키는 지운다
+    errors = loop.check({"kind": "hold", "tags": ["a", "b", 3]}, schema)
     assert any("$.n: 빠짐" in e for e in errors) and any("enum" in e or "중 하나" in e for e in errors)
     assert any("$.tags" in e for e in errors)
-    assert local_run.check({"n": None}, {"properties": {"n": {"anyOf": [{"type": "integer"}, {"type": "null"}]}}}) == []
+    assert loop.check({"n": None}, {"properties": {"n": {"anyOf": [{"type": "integer"}, {"type": "null"}]}}}) == []
 
 
 # ---------- 공급자 고르기 ----------
