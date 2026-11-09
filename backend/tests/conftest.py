@@ -62,7 +62,7 @@ def isolated_env(tmp_path, monkeypatch):
     monkeypatch.setenv("MIA_SERVICES", "0")  # 백그라운드 서비스를 띄우지 않는다
     for key in ("TOSS_CLIENT_ID", "TOSS_CLIENT_SECRET", "TOSS_ACCOUNT_SEQ", "MIA_TRADING_PIN", "ANTHROPIC_API_KEY",
                 "DART_API_KEY", "MIA_VLLM_URL", "MIA_VLLM_API_KEY", "LANGSMITH_API_KEY", "MIA_MODELS_DIR",
-                "MIA_ADMIN_PASSWORD", "MIA_ADMIN_PASSWORD_HASH", "MIA_PUBLIC", "MIA_SESSION_SECRET"):
+                "MIA_ADMIN_PASSWORD", "MIA_ADMIN_PASSWORD_HASH", "MIA_PUBLIC", "MIA_SESSION_SECRET", "MIA_AUTOPILOT"):
         monkeypatch.delenv(key, raising=False)
     from app.auth import security
     from app.invest.broker import config, toss
