@@ -15,9 +15,10 @@ import re
 import sqlite3
 from collections.abc import Callable
 
-from app.invest import desk, exits, market, policy, scorelog, screening, watch
+from app.invest import desk, exits, policy, scorelog, screening
+from app.invest.marketdata import market, watch
 from app.invest.broker import trading
-from app.invest.market import MarketError
+from app.invest.marketdata.market import MarketError
 from app.invest.broker.toss import TossError
 from app.invest.broker.trading import TradeError
 

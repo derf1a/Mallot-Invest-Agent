@@ -17,7 +17,8 @@ import json
 import sqlite3
 from datetime import date, datetime
 
-from app.invest import autopilot, market
+from app.invest import autopilot
+from app.invest.marketdata import market
 from app.runs.runner import run_dict, start_run
 
 STAGES = ("market", "sector", "ideas", "alert")

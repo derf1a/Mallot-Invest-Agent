@@ -9,8 +9,9 @@ from datetime import date, datetime
 
 import pytest
 
-from app.invest import agents, dart, desk_agents, market, scorelog, screening, valuation
-from app.invest.market import SampleMarket
+from app.invest import agents, dart, desk_agents, scorelog, screening, valuation
+from app.invest.marketdata import market
+from app.invest.marketdata.market import SampleMarket
 from tests.test_invest import at_open  # noqa: F401 — 장중 시각 고정 fixture
 from tests.test_invest_autopilot import conn, pilot  # noqa: F401 — fixture
 

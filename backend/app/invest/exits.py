@@ -17,7 +17,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from app.invest import policy, screening
 from app.invest.broker import config, trading
-from app.invest.market import MarketError
+from app.invest.marketdata.market import MarketError
 from app.invest.broker.toss import TossError
 from app.invest.broker.trading import TradeError
 

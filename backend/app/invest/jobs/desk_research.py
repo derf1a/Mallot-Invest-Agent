@@ -6,7 +6,8 @@
 
 import json
 
-from app.invest import desk, desk_agents, market
+from app.invest import desk, desk_agents
+from app.invest.marketdata import market
 from app.invest.broker import config
 from app.runs.runner import JobSpec, RunContext, register
 

@@ -6,9 +6,10 @@
 import asyncio
 import json
 
-from app.invest import market, news, report, watch
+from app.invest import report
+from app.invest.marketdata import market, news, watch
 from app.invest.broker import trading
-from app.invest.market import MarketError
+from app.invest.marketdata.market import MarketError
 from app.invest.broker.trading import TradeError
 from app.runs.runner import JobError, JobSpec, RunContext, register
 

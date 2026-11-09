@@ -20,9 +20,10 @@ import json
 import threading
 from datetime import datetime
 
-from app.invest import agents, autopilot, desk, exits, market, minutes, policy, scopes, screening, stream
+from app.invest import agents, autopilot, desk, exits, minutes, policy, scopes, screening, stream
+from app.invest.marketdata import market
 from app.invest.broker import config
-from app.invest.market import MarketError
+from app.invest.marketdata.market import MarketError
 from app.invest.broker.toss import TossError
 from app.runs.runner import Cancelled, JobError, JobSpec, RunContext, register
 from app.llm.client import LLMError

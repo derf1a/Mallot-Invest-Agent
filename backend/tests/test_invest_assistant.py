@@ -5,8 +5,9 @@ from datetime import datetime
 
 import pytest
 
-from app.invest import agents, assistant, autopilot, market
-from app.invest.market import KST
+from app.invest import agents, assistant, autopilot
+from app.invest.marketdata import market
+from app.invest.marketdata.market import KST
 from app.llm.client import LLMError
 from tests.test_invest import PIN, at_open  # noqa: F401 — 장중 시각 고정 fixture
 
@@ -233,7 +234,8 @@ def test_report_summarizes_meetings_and_market_issues(client, broker, at_open, m
     """회의 요약(회의록·주문·다음에 볼 것, 진행 중인 채널은 지금 입장, 끊긴 회의는 뺌)과 장내 이슈(시장 뉴스·보유 종목 뉴스)."""
     import json
     from app.core.db import connect, data_dir
-    from app.invest import briefing, news
+    from app.invest import briefing
+    from app.invest.marketdata import news
     from app.invest.broker import trading
     from tests.test_invest_ai import RSS
     conn = connect()
@@ -283,8 +285,9 @@ def test_report_history_and_sector_rates(client, broker, at_open, monkeypatch):
     """수익률 추이: 지나간 보고서(기준 원금 시작일이 같은 것)의 값 + 지금, 지수는 시작 전 종가 대비. 섹터 의견에는 기간 등락."""
     from datetime import timedelta
     from app.core.db import connect
-    from app.invest import briefing, desk, market, news, policy
-    from app.invest.market import MarketError, SampleMarket
+    from app.invest import briefing, desk, policy
+    from app.invest.marketdata import market, news
+    from app.invest.marketdata.market import MarketError, SampleMarket
     from tests.test_invest_ai import RSS
     conn = connect()
     monkeypatch.setattr(news, "HTTP", lambda *_a, **_k: (200, RSS.encode()))
@@ -345,7 +348,7 @@ def test_morning_briefing_daily(client, broker, monkeypatch):
     from datetime import datetime
     from app.core.db import connect
     from app.invest import morning
-    from app.invest.market import KST, SampleMarket
+    from app.invest.marketdata.market import KST, SampleMarket
 
     class Holiday(SampleMarket):
         def session(self):
@@ -444,7 +447,7 @@ def test_briefing_on_holiday_when_not_skipping(client, monkeypatch):
     from datetime import datetime
     from app.core.db import connect
     from app.invest import morning
-    from app.invest.market import KST, SampleMarket
+    from app.invest.marketdata.market import KST, SampleMarket
 
     class Holiday(SampleMarket):
         def session(self):

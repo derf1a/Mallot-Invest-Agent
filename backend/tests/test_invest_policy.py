@@ -6,7 +6,7 @@ import re
 import pytest
 
 from app.invest import advisor, agents, assistant, autopilot, briefing, desk, policy, scopes, screening
-from app.invest.market import SampleMarket
+from app.invest.marketdata.market import SampleMarket
 from tests.test_invest import PIN, at_open  # noqa: F401 — 장중 시각 고정 fixture
 from tests.test_invest_assistant import say, thread
 from tests.test_invest_autopilot import at, conn, pilot  # noqa: F401 — fixture

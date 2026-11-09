@@ -14,7 +14,7 @@ import sqlite3
 from collections.abc import Iterator
 from datetime import datetime
 
-from app.invest import market
+from app.invest.marketdata import market
 
 KINDS = {"sector": "섹터 평가", "value": "가치 스크린", "ideas": "종목 발굴", "meeting": "회의 후보"}
 log = logging.getLogger(__name__)

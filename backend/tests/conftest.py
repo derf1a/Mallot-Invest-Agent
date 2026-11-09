@@ -16,7 +16,8 @@ def runs_sync(monkeypatch):
 def no_real_llm(monkeypatch):
     """테스트가 실제 LLM·뉴스를 부르지 않게 — 따로 가짜를 넣지 않은 투자 비서·회의록·일정 담당·운용 데스크는 실패로(코드 대체 경로를
     탄다), 뉴스 RSS 는 연결 실패로."""
-    from app.invest import advisor, assistant, autopilot, desk_agents, minutes, morning, news, screening
+    from app.invest import advisor, assistant, autopilot, desk_agents, minutes, morning, screening
+    from app.invest.marketdata import news
     from app.llm.client import LLMError
 
     async def offline(*_args, **_kwargs):
@@ -58,7 +59,7 @@ def isolated_env(tmp_path, monkeypatch):
     for key in ("TOSS_CLIENT_ID", "TOSS_CLIENT_SECRET", "TOSS_ACCOUNT_SEQ", "MIA_TRADING_PIN", "ANTHROPIC_API_KEY",
                 "DART_API_KEY", "MIA_VLLM_URL", "MIA_VLLM_API_KEY", "LANGSMITH_API_KEY", "MIA_MODELS_DIR"):
         monkeypatch.delenv(key, raising=False)
-    from app.invest import market
+    from app.invest.marketdata import market
     from app.invest.broker import config, toss
 
     market.clear_cache()
@@ -75,9 +76,9 @@ PIN = "2468"
 @pytest.fixture
 def broker(monkeypatch):
     """토스 키·주문 PIN 이 있는 상태 + 가짜 토스 계좌(tests/fake_broker.py). 시세는 샘플 시세 그대로."""
-    from app.invest import market
+    from app.invest.marketdata import market
     from app.invest.broker import toss
-    from app.invest.market import SampleMarket
+    from app.invest.marketdata.market import SampleMarket
     from tests.fake_broker import FakeBroker
 
     monkeypatch.setenv("TOSS_CLIENT_ID", "cid")

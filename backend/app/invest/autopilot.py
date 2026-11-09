@@ -29,9 +29,10 @@ import threading
 from collections.abc import Awaitable, Callable
 from datetime import date, datetime
 
-from app.invest import market, policy
+from app.invest import policy
+from app.invest.marketdata import market
 from app.invest.broker import config
-from app.invest.market import MarketError
+from app.invest.marketdata.market import MarketError
 from app.invest.broker.toss import TossError
 from app.runs.runner import run_dict, start_run
 from app.llm.client import structured

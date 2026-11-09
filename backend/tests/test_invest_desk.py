@@ -4,7 +4,7 @@
 import pytest
 
 from app.invest import assistant, autopilot, briefing, desk, desk_agents, scopes, screening
-from app.invest.market import SampleMarket
+from app.invest.marketdata.market import SampleMarket
 from tests.test_invest import PIN, at_open  # noqa: F401 — 장중 시각 고정 fixture
 from tests.test_invest_assistant import Fake, say, thread
 from tests.test_invest_autopilot import Holiday, at, conn, pilot  # noqa: F401 — fixture
@@ -199,7 +199,7 @@ def test_adhoc_waits_for_running_debate_and_has_daily_cap(conn, broker, pilot, m
 
 # ---- 일정 ----
 def test_desk_tick_schedule(conn, broker, monkeypatch):
-    from app.invest import market
+    from app.invest.marketdata import market
     clock = {"t": at("08:25")}
     monkeypatch.setattr(market, "now_kst", lambda: clock["t"])  # 리서치 작업이 남기는 날짜
 
@@ -296,7 +296,7 @@ def test_ai_set_meetings_always_meet(conn, pilot):
 
 
 def test_morning_research_retries_after_failure(conn, broker, monkeypatch):
-    from app.invest import market
+    from app.invest.marketdata import market
     clock = {"t": at("08:25")}
     monkeypatch.setattr(market, "now_kst", lambda: clock["t"])
     autopilot.save_config(conn, enabled=True)

@@ -8,7 +8,7 @@ import json
 import urllib.parse
 
 from app.invest.broker import toss
-from app.invest.market import SampleMarket
+from app.invest.marketdata.market import SampleMarket
 
 ACCOUNT_SEQ = "1"
 ACCOUNT_NO = "12345678901"

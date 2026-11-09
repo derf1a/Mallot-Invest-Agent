@@ -12,7 +12,7 @@ import sqlite3
 from datetime import date, datetime
 
 from app.core.db import data_dir
-from app.invest.market import MarketError
+from app.invest.marketdata.market import MarketError
 from app.invest.broker.toss import TossError
 
 HORIZON = 5

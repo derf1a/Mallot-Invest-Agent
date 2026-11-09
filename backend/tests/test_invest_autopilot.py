@@ -9,7 +9,7 @@ from app import registry
 from app.core.db import connect
 from app.invest import agents, autopilot, scopes, service
 from app.invest.broker import config
-from app.invest.market import KST, SampleMarket
+from app.invest.marketdata.market import KST, SampleMarket
 from app.llm.client import LLMError
 from app.runs.runner import start_run
 from tests.test_invest import OPEN_TIME, PIN, at_open  # noqa: F401 — 장중 시각 고정 fixture

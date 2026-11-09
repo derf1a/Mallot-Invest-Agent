@@ -20,8 +20,9 @@ import asyncio
 from collections.abc import Awaitable, Callable
 from concurrent.futures import ThreadPoolExecutor
 
-from app.invest import indicators, valuation, watch
-from app.invest.market import MarketError
+from app.invest import valuation
+from app.invest.marketdata import indicators, watch
+from app.invest.marketdata.market import MarketError
 from app.invest.broker.toss import TossError
 from app.llm.client import LLMError, structured
 

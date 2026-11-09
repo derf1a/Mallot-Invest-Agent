@@ -4,7 +4,8 @@ import re
 import pytest
 
 from app.core.db import connect
-from app.invest import agents, news, report
+from app.invest import agents, report
+from app.invest.marketdata import news
 from app.llm.client import LLMError
 from tests.test_invest import PIN, at_open  # noqa: F401 — 장중 시각 고정 fixture
 
@@ -447,7 +448,7 @@ def test_holding_indicators_table(client, broker, at_open):
 def test_performance_items_by_stock_order_and_meeting(client, broker, at_open):
     from app.core.db import connect
     from app.invest import briefing
-    from app.invest.market import SampleMarket
+    from app.invest.marketdata.market import SampleMarket
     broker.positions["005930"] = {"quantity": 10.0, "cost": 700_000.0}
     broker.positions["000660"] = {"quantity": 1.0, "cost": 400_000.0}
     c = connect()
@@ -478,7 +479,7 @@ def test_stale_news_report_is_not_handed_to_agents(client, monkeypatch):
     import asyncio
     from datetime import timedelta
     from app.core.db import connect
-    from app.invest import market
+    from app.invest.marketdata import market
 
     conn = connect()
     conn.execute("INSERT INTO runs (kind, name, status, finished_at, artifact_path) VALUES ('news_report', 'r', 'succeeded', ?, 'x')",
