@@ -1,4 +1,4 @@
-/* ---------- 로그인 · 손님(공유) 화면 — 휴대폰을 먼저 생각한다 ---------- */
+/* ---------- 로그인 · 읽기 전용(손님) · 운용 현황 요약 — 휴대폰을 먼저 생각한다 ---------- */
 .page-error { padding: 24px; }
 .login-page { min-height: 100dvh; display: grid; place-items: center; padding: 16px; background: var(--bg); }
 .login-card { width: min(380px, 100%); display: flex; flex-direction: column; gap: 14px; }
@@ -6,14 +6,14 @@
 .login-card input { width: 100%; font-size: 16px; }  /* iOS 는 16px 보다 작으면 입력할 때 화면을 확대한다 */
 .nav-button { width: 100%; border: none; background: none; text-align: left; cursor: pointer; }
 
-.viewer-app { min-height: 100dvh; background: var(--bg); }
-.viewer-bar {
-  position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 8px;
-  padding: calc(10px + env(safe-area-inset-top)) 16px 10px; background: var(--surface); border-bottom: 1px solid var(--border);
-  font-family: var(--font-display);
-}
-.viewer-actions { margin-left: auto; display: flex; gap: 12px; }
-.viewer-content { max-width: 1100px; margin: 0 auto; padding: 16px 16px calc(84px + env(safe-area-inset-bottom)); }
+/* 손님(읽기 전용) — 관리자 화면과 같고, 잠긴 칸 · 표시만 더한다 */
+.readonly-banner { margin: 0 0 12px; padding: 8px 12px; border-radius: 8px; background: var(--surface); border: 1px dashed var(--border); }
+.readonly-fieldset { border: 0; margin: 0; padding: 0; min-width: 0; display: flex; flex-direction: column; gap: 16px; }  /* .page 의 칸 간격 그대로 */
+.readonly-fieldset:disabled input, .readonly-fieldset:disabled select, .readonly-fieldset:disabled textarea,
+.readonly-fieldset:disabled button { cursor: not-allowed; }
+.readonly-chip { margin-left: auto; }
+.nav-readonly { display: block; padding: 6px 12px; color: var(--muted); }
+.room-composer.readonly-note { justify-content: center; padding: 10px; }
 
 .share-page .page-header { flex-wrap: wrap; }
 .share-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; }
@@ -68,5 +68,4 @@
   /* 관리자 화면 안의 미리 보기는 아래 여백을 탭 막대만큼 */
   .content .share-page { padding-bottom: 72px; }
   .share-grid { grid-template-columns: minmax(0, 1fr); }
-  .viewer-actions .link { font-size: 0.8rem; }
 }

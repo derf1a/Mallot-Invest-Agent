@@ -1,8 +1,11 @@
 """요청마다 역할을 검사하는 미들웨어 (main.py 가 붙인다).
 
 - 권한이 꺼져 있으면(비밀번호 없음 · 공개 아님) 지금처럼 열려 있다. 단, 터널 · 프록시를 거친 API 요청은 막는다.
-- 켜져 있으면: /api/share/* 는 손님 · 관리자, 로그인 · 입장 · 상태 확인은 누구나, 나머지 API 와 /docs 는 관리자만.
+- 켜져 있으면: 로그인 · 입장 · 상태 확인은 누구나. 관리자는 모두.
+  손님(공유 링크)은 관리자 화면을 읽기만 한다 — GET 은 열고, 쓰기(POST · PUT · DELETE)는 모두 403.
+  손님에게도 닫는 GET: 공유 링크 · 키(/api/auth/share), /docs. 설정의 키 값은 라우터가 빼고 보낸다 (core/access.is_viewer).
 - 쓰기 요청(POST · PUT · DELETE)은 Origin 이 있으면 이 사이트여야 한다 (다른 사이트에서 몰래 보내는 요청 막기).
+- 역할은 request.state.role 에 넣는다 (라우터가 손님용으로 값을 줄일 때).
 """
 
 from urllib.parse import urlsplit
@@ -13,8 +16,9 @@ from fastapi.responses import JSONResponse
 from app.auth import security
 
 OPEN_API = {"/api/health", "/api/auth/login", "/api/auth/logout", "/api/auth/me", "/api/auth/share/enter"}
-SHARE_PREFIX = "/api/share/"
 DOC_PATHS = ("/docs", "/redoc", "/openapi.json")
+VIEWER_CLOSED = ("/api/auth/share", *DOC_PATHS)  # 손님에게는 읽기도 닫는다
+READ_METHODS = ("GET", "HEAD", "OPTIONS")
 
 
 def _same_origin(request: Request) -> bool:
@@ -37,15 +41,21 @@ async def guard(request: Request, call_next):
     if not security.enabled():
         if security.proxied(request.headers):
             return _deny(403, "관리자 비밀번호 없이 외부에서 열 수 없어요 — MIA_ADMIN_PASSWORD_HASH 를 정하세요")
+        request.state.role = "admin"
         return await call_next(request)
-    if request.method not in ("GET", "HEAD", "OPTIONS") and not _same_origin(request):
+    reading = request.method in READ_METHODS
+    if not reading and not _same_origin(request):
         return _deny(403, "다른 사이트에서 온 요청이에요")
     if path in OPEN_API:
         return await call_next(request)
     role = security.role_of(request.cookies)
-    if path.startswith(SHARE_PREFIX):
-        if role not in ("admin", "viewer"):
-            return _deny(401, "공유 링크로 들어와 주세요")
-    elif role != "admin":
-        return _deny(401, "관리자 로그인이 필요해요")
+    request.state.role = role
+    if role == "admin":
+        return await call_next(request)
+    if role != "viewer":
+        return _deny(401, "로그인하거나 공유 링크로 들어와 주세요")
+    if not reading:
+        return _deny(403, "읽기 전용이에요 — 손님은 설정 · 주문 · 대화를 바꿀 수 없어요")
+    if path.startswith(VIEWER_CLOSED):
+        return _deny(403, "관리자만 볼 수 있어요")
     return await call_next(request)

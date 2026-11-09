@@ -1,6 +1,7 @@
 /**
  * Settings > 공유 — 손님(읽기 전용) 공유 링크 켜기 · 끄기 · 새 키, 휴대폰으로 찍어 여는 QR.
- * 손님은 운용 상황 · 보고서만 본다 (/share). 관리자는 같은 주소에서 비밀번호로 로그인하면 휴대폰에서도 모든 화면을 쓴다.
+ * 손님은 관리자 화면을 그대로 읽기만 한다 (키 · 공유 설정은 못 보고, 설정 · 주문 · 대화는 못 바꾼다).
+ * 관리자는 같은 주소에서 비밀번호로 로그인하면 휴대폰에서도 모든 화면을 쓴다.
  */
 import QRCode from 'qrcode'
 import { useEffect, useState } from 'react'
@@ -44,7 +45,7 @@ export default function ShareSettings() {
         </p>
       )}
 
-      <h3>손님 공유 링크 <span className="muted small">운용 상황 · 보고서만, 읽기 전용</span></h3>
+      <h3>손님 공유 링크 <span className="muted small">모든 화면을 읽기만 — 키 · 공유 설정 제외</span></h3>
       {error && <p className="error">{error}</p>}
       {link && (
         <>
@@ -55,7 +56,7 @@ export default function ShareSettings() {
             <button onClick={() => window.confirm('새 키를 만들면 지금 링크와 이미 들어온 손님이 모두 끊겨요. 만들까요?') && act({ rotate: true }, '새 키를 만들었어요')}>
               새 키 만들기
             </button>
-            <Link className="small" to="/share">손님 화면 미리 보기 →</Link>
+            <Link className="small" to="/share">휴대폰용 운용 현황 요약 →</Link>
           </div>
           {link.enabled ? (
             <div className="share-link">
@@ -64,7 +65,7 @@ export default function ShareSettings() {
                 <code className="share-url">{url}</code>
                 <div className="row-actions"><button className="small" onClick={() => copy(url)}>링크 복사</button></div>
                 <p className="muted small">
-                  이 주소를 아는 사람은 누구나 운용 상황 · 보고서(금액 포함)를 볼 수 있어요. 키는 링크에만 있고, 들어온 손님은 30일 동안 다시 묻지 않아요.
+                  이 주소를 아는 사람은 누구나 모든 화면(금액 · 대화 · 트레이스 포함)을 읽을 수 있어요 — 받은 사람이 다시 전달해도 들어와요. 키는 링크에만 있고, 들어온 손님은 30일 동안 다시 묻지 않아요. 끝내려면 공유 끄기나 새 키.
                   {window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
                     ? ' 지금은 이 컴퓨터 주소예요 — 휴대폰에서는 터널 주소(내 도메인)로 열어야 해요.' : ''}
                 </p>

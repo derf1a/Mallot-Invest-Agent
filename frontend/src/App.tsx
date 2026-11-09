@@ -1,10 +1,10 @@
 import { lazy, Suspense, useCallback, useEffect, useState, type ReactNode } from 'react'
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
-import Layout from './app/Layout'
-import ViewerLayout from './app/ViewerLayout'
+import Layout, { type ViewerActions } from './app/Layout'
 import { authApi, type Me } from './features/auth/api'
 import LoginPage from './features/auth/LoginPage'
-import { UNAUTHORIZED_EVENT } from './shared/http'
+import { setReadOnly, UNAUTHORIZED_EVENT } from './shared/http'
+import { ReadOnlyContext } from './shared/readOnly'
 
 // 화면마다 처음 열 때 불러온다 — 첫 화면 번들을 작게
 const Invest = lazy(() => import('./features/invest/InvestPage'))
@@ -20,7 +20,8 @@ const Share = lazy(() => import('./features/share/SharePage'))
 const page = (el: ReactNode) => <Suspense fallback={<p className="muted">불러오는 중…</p>}>{el}</Suspense>
 
 /**
- * 역할에 따라 다른 앱: 관리자 = 모든 화면, 손님 = 운용 현황(/share)만, 아무도 아님 = 공유 링크 입장 또는 관리자 로그인.
+ * 역할에 따라: 관리자 = 모든 화면, 손님(공유 링크) = 같은 화면을 읽기만(키 · 공유 설정 없음, 쓰기는 화면 · 서버 둘 다 막음),
+ * 아무도 아님 = 공유 링크 입장 또는 관리자 로그인.
  * 로그인이 꺼진 모드(이 컴퓨터에서만 쓰기)에서는 서버가 언제나 관리자로 답한다.
  */
 export default function App() {
@@ -35,18 +36,26 @@ export default function App() {
     return () => window.removeEventListener(UNAUTHORIZED_EVENT, onUnauthorized)
   }, [load])
   const logout = useCallback(() => authApi.logout().finally(load), [load])
+  const readOnly = me?.role === 'viewer'
+  useEffect(() => { setReadOnly(readOnly) }, [readOnly])
 
   if (error) return <p className="error page-error">{error}</p>
   if (!me) return <p className="muted page-error">불러오는 중…</p>
-  if (me.role === 'admin') return <AdminApp me={me} onLogout={logout} />
-  if (me.role === 'viewer') return <ViewerLayout onLeave={logout} onLogin={() => setMe({ ...me, role: null })}>{page(<Share />)}</ViewerLayout>
+  if (me.role === 'admin' || me.role === 'viewer') {
+    const viewer = readOnly ? { onLogin: () => setMe({ ...me, role: null }), onLeave: logout } : undefined
+    return (
+      <ReadOnlyContext.Provider value={readOnly}>
+        <MainApp onLogout={me.auth && !readOnly ? logout : undefined} viewer={viewer} />
+      </ReadOnlyContext.Provider>
+    )
+  }
   return <Gate me={me} onDone={load} />
 }
 
-function AdminApp({ me, onLogout }: { me: Me; onLogout: () => void }) {
+function MainApp({ onLogout, viewer }: { onLogout?: () => void; viewer?: ViewerActions }) {
   return (
     <Routes>
-      <Route element={<Layout onLogout={me.auth ? onLogout : undefined} />}>
+      <Route element={<Layout onLogout={onLogout} viewer={viewer} />}>
         <Route index element={<Navigate to="/invest/ai" replace />} />
         <Route path="invest" element={page(<Invest />)} />
         <Route path="invest/portfolio" element={page(<Portfolio />)} />
@@ -55,7 +64,7 @@ function AdminApp({ me, onLogout }: { me: Me; onLogout: () => void }) {
         <Route path="observe/agents" element={page(<Agents />)} />
         <Route path="observe/graph" element={page(<Graph />)} />
         <Route path="observe/traces" element={page(<Traces />)} />
-        <Route path="share" element={page(<Share preview />)} />
+        <Route path="share" element={page(<Share />)} />
         <Route path="settings" element={page(<Settings />)} />
         <Route path="*" element={<Navigate to="/invest/ai" replace />} />
       </Route>
@@ -75,7 +84,7 @@ function Gate({ me, onDone }: { me: Me; onDone: () => Promise<unknown> }) {
     authApi.enter(key)
       .then(() => {
         // 주소창 · 라우터 둘 다에서 키를 지운다 — 남아 있으면 "관리자 로그인"을 눌러도 이 키로 다시 손님 입장한다
-        navigate('/share', { replace: true })
+        navigate('/invest/ai', { replace: true })
         return onDone()
       })
       .catch((e: Error) => setFailed(e.message))

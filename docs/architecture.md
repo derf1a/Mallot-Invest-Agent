@@ -12,7 +12,7 @@ core  ←  llm  ←  runs  ←  invest (broker · marketdata · analysis  ←  d
 
 | 패키지 | 하는 일 |
 |---|---|
-| `app/core` | SQLite 연결 · 스키마 단계(`migrations.py`, `PRAGMA user_version`) · `.env` 로더 · 공인 주소만 여는 HTTP · **호출 추적 기록**(`trace.py`) |
+| `app/core` | 요청한 사람의 역할(`access.py`) · SQLite 연결 · 스키마 단계(`migrations.py`, `PRAGMA user_version`) · `.env` 로더 · 공인 주소만 여는 HTTP · **호출 추적 기록**(`trace.py`) |
 | `app/llm` | `structured()`(도구 없음) · `agentic()`(앱 도구만) 단일 진입점, 경로(`routes.py`), 백엔드: Claude Agent SDK · 로컬 MLX(`local.py` · `mlx_worker.py`) · vLLM(`vllm.py`), 채팅 루프(`loop.py`), 사용량 `llm_usage` |
 | `app/runs` | 작업 실행기 — 상태 · 진행률 · 로그 · 지표 · 산출물(`data/runs/<id>`). 실행을 새로 만드는 범용 API 는 없다 (토론은 PIN 을 거치는 투자 API 로만) |
 | `app/invest/broker` | 토스증권 Open API(`toss.py`), 주문 한도 · PIN(`config.py`), **모든 주문이 지나는** `trading.place_order`, 내 투자현황(`portfolio.py`) |
@@ -25,7 +25,7 @@ core  ←  llm  ←  runs  ←  invest (broker · marketdata · analysis  ←  d
 | `app/graph` | 에이전트 카탈로그(`catalog.py`), 흐름 그래프(`topology.py`), 관찰 그래프(`observed.py`), LangGraph 내보내기 |
 | `app/tracing` | 트레이스 목록 · 상세 · 에이전트별 통계 API, LangSmith 내보내기(`langsmith.py`, `service.py`) |
 | `app/auth` | 관리자 비밀번호(scrypt) · 서명 쿠키 · 손님 공유 키(`security.py`), 요청마다 역할을 검사하는 미들웨어(`guard.py`), 비밀번호 정하기(`passwd.py`) — [share.md](share.md) |
-| `app/share` | 손님 화면 데이터(`views.py`) — 자동 운용 상태 · 오늘 리서치 · 보고서 · 회의 대화를 읽기만, 운용 지시 글 · 설정은 빼고 |
+| `app/share` | 휴대폰용 운용 현황 요약(`/share`) 데이터(`views.py`) — 자동 운용 상태 · 오늘 리서치 · 보고서 · 회의 대화 |
 
 새 기능 패키지는 `app/<이름>/` 에 `api.py`(라우터) · `jobs/`(작업) · `service.py`(start/stop) 를 두면 `app/registry.py` 가 자동으로 붙인다.
 
@@ -80,9 +80,9 @@ sequenceDiagram
 | `/api/graph` | 에이전트 카탈로그 · 흐름 · 관찰 그래프 · LangGraph 내보내기 |
 | `/api/traces` | 트레이스 목록 · 상세 · 에이전트별 통계 · LangSmith 상태 |
 | `/api/auth` | 내 역할 · 관리자 로그인 · 로그아웃 · 손님 입장 · 공유 링크 켜기 · 끄기 · 새 키 |
-| `/api/share` | 손님 화면 — 운용 상태 · 지금 보고서 · 지난 보고서 · 회의 목록 · 회의 대화 (손님 · 관리자) |
+| `/api/share` | 운용 현황 요약 — 운용 상태 · 지금 보고서 · 지난 보고서 · 회의 목록 · 회의 대화 |
 | `/api/health` | 살아 있는지 · DB 스키마 버전 |
 
-로그인이 켜져 있으면(관리자 비밀번호가 있거나 `MIA_PUBLIC=1`) `/api/share/*` 는 손님 · 관리자, 로그인 · 입장 · 상태 확인은 누구나, 나머지는 관리자만 연다 (`app/auth/guard.py`).
+로그인이 켜져 있으면(관리자 비밀번호가 있거나 `MIA_PUBLIC=1`) 로그인 · 입장 · 상태 확인은 누구나, 관리자는 모두, 손님은 GET 만 연다 (`app/auth/guard.py`). 손님에게는 공유 링크 · `/docs` 도 닫고, 키 · `.env` 위치 · vLLM 주소는 라우터가 `core/access.is_viewer` 로 빼고 보낸다.
 
 서버를 띄운 뒤 `http://localhost:8100/docs` 에서 전체 OpenAPI 를 볼 수 있다.

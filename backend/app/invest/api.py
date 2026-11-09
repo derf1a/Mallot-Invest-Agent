@@ -3,9 +3,10 @@
 import sqlite3
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
+from app.core.access import is_viewer
 from app.core.db import get_conn
 from app.invest.broker import config
 from app.invest.broker.toss import TossClient, TossError, clear_token_cache, match_account
@@ -37,8 +38,12 @@ def status(conn: Conn) -> dict:
 
 
 @router.get("/config")
-def read_config(conn: Conn) -> dict:
-    return config.snapshot(conn)
+def read_config(request: Request, conn: Conn) -> dict:
+    """손님(읽기 전용)에게는 키(가린 값도)와 .env 위치를 빼고 — 한도 · 승인 · 주문 중지만."""
+    snap = config.snapshot(conn)
+    if is_viewer(request):
+        snap = {k: v for k, v in snap.items() if k not in ("keys", "env_file")}
+    return snap
 
 
 class KeysIn(BaseModel):

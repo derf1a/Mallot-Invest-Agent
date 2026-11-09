@@ -48,8 +48,11 @@ function Wordmark() {
   )
 }
 
+/** 손님(공유 링크)으로 볼 때 — 읽기 전용 표시와 관리자 로그인 · 나가기 */
+export interface ViewerActions { onLogin: () => void; onLeave: () => void }
+
 // PC: 왼쪽 사이드바 고정 / 모바일: 좌상단 햄버거 버튼으로 여닫는 드로어
-export default function Layout({ onLogout }: { onLogout?: () => void }) {
+export default function Layout({ onLogout, viewer }: { onLogout?: () => void; viewer?: ViewerActions }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const location = useLocation()
   const { data: health } = useLoad(() => systemApi.health().catch(() => null), [])
@@ -71,6 +74,7 @@ export default function Layout({ onLogout }: { onLogout?: () => void }) {
         </button>
         <BrandMark size={24} />
         <span className="topbar-title">{current?.label ?? 'Mallot Invest'}</span>
+        {viewer && <span className="chip readonly-chip">읽기 전용</span>}
       </header>
 
       {menuOpen && <div className="backdrop" onClick={() => setMenuOpen(false)} />}
@@ -91,6 +95,13 @@ export default function Layout({ onLogout }: { onLogout?: () => void }) {
         <div className="nav-utility">
           {UTILITY.map((item) => link(item, 'small'))}
           {onLogout && <button className="nav-link small nav-button" onClick={onLogout}>로그아웃</button>}
+          {viewer && (
+            <>
+              <span className="nav-readonly small">읽기 전용 · 손님</span>
+              <button className="nav-link small nav-button" onClick={viewer.onLogin}>관리자 로그인</button>
+              <button className="nav-link small nav-button" onClick={viewer.onLeave}>나가기</button>
+            </>
+          )}
         </div>
         <footer className="sidebar-footer">
           <BrandMark size={18} />

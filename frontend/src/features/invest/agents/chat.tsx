@@ -6,6 +6,7 @@
  * 채팅 상태(session.ts 의 useChat)는 화면(AI Trading)이 들고 채팅방과 토론 현황 서랍이 같이 쓴다.
  */
 import { Fragment, useEffect, useRef, useState } from 'react'
+import { useReadOnly } from '../../../shared/readOnly'
 import { isActive, STATUS_LABEL } from '../../runs/live'
 import type { Run } from '../../runs/api'
 import { investApi, type AdviceStatus, type Agent, type AssistantMessage, type Candidate, type ChatMessage, type Order, type SessionOrder,
@@ -728,6 +729,7 @@ function DecisionGroup({ m, who, orders, onOrdersChanged }: { m: Msg<'decision'>
 
 /** 트레이더 주문 제안 카드 — 관리자가 승인하면 토스증권 실계좌로 제출 */
 function OrderCards({ orders, onChanged }: { orders: Order[]; onChanged: () => void }) {
+  const readOnly = useReadOnly()  // 손님은 승인 · 거절 버튼 없이
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const act = async (o: Order, approve: boolean) => {
@@ -768,7 +770,7 @@ function OrderCards({ orders, onChanged }: { orders: Order[]; onChanged: () => v
               </dl>
               {o.error && !pending && <p className="small neg">{o.error}</p>}
             </div>
-            {pending && (
+            {pending && !readOnly && (
               <div className="order-card-actions">
                 <button disabled={busy} onClick={() => act(o, false)}>거절</button>
                 <button className="primary" disabled={busy} onClick={() => act(o, true)}>승인</button>
@@ -807,6 +809,7 @@ export function Composer({ onSend, placeholder, label = '에이전트들에게 �
   placeholder: string
   label?: string
 }) {
+  const readOnly = useReadOnly()
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
   const ref = useRef<HTMLTextAreaElement>(null)
@@ -816,6 +819,7 @@ export function Composer({ onSend, placeholder, label = '에이전트들에게 �
     el.style.height = 'auto'
     el.style.height = `${Math.min(el.scrollHeight, 120)}px`
   }, [text])
+  if (readOnly) return <div className="room-composer readonly-note muted small">읽기 전용 — 대화는 볼 수만 있어요</div>
   const submit = async () => {
     if (!text.trim() || sending) return
     setSending(true)

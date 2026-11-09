@@ -3,9 +3,10 @@
 import time
 from typing import Literal
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
+from app.core.access import is_viewer
 from app.llm import local, routes, vllm
 from app.llm.client import FEATURES, LLMError
 
@@ -150,8 +151,10 @@ def resolve_route(feature: str = "agent_action", agent: str = "", model: str = "
 # ---------- vLLM ----------
 
 @router.get("/vllm")
-def vllm_status() -> dict:
-    return vllm.status()
+def vllm_status(request: Request) -> dict:
+    """손님(읽기 전용)에게는 서버 주소를 빼고 보낸다."""
+    out = vllm.status()
+    return {**out, "url": None} if is_viewer(request) else out
 
 
 @router.put("/vllm")

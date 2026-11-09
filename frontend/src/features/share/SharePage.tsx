@@ -1,7 +1,6 @@
 /**
- * 손님 화면 (공유 링크) — 운용 상황과 보고서만, 읽기만.
+ * 운용 현황 요약 (/share) — 휴대폰에서 한눈에 보는 한 장. 관리자 · 손님(읽기 전용) 둘 다 연다.
  * 자동 운용 상태 · 오늘 일정, 오늘 리서치(시장 · 섹터 · 발굴 · 경보), 지금 보고서, 회의 목록과 회의방 대화, 지난 보고서.
- * 관리자도 이 화면을 열 수 있다 (손님에게 어떻게 보이는지 미리 보기).
  */
 import { useEffect, useState } from 'react'
 import { useLoad } from '../../shared/useLoad'
@@ -24,7 +23,7 @@ const TABS: { key: Tab; label: string; icon: string }[] = [
   { key: 'meetings', label: '회의', icon: '☰' },
 ]
 
-export default function SharePage({ preview = false }: { preview?: boolean }) {
+export default function SharePage() {
   const { data: status, error, reload } = useLoad(() => shareApi.status(), [])
   const [openId, setOpenId] = useState<number | null>(null)
   // 휴대폰에서는 아래쪽 탭으로 한 칸씩, 넓은 화면에서는 모두 펼쳐 보인다 (CSS 가 data-tab 으로 가린다)
@@ -37,7 +36,7 @@ export default function SharePage({ preview = false }: { preview?: boolean }) {
     <section className="page share-page" data-tab={tab}>
       <div className="page-header">
         <h1>운용 현황</h1>
-        <span className="muted small">{preview ? '손님에게 보이는 화면 미리 보기 · ' : ''}읽기 전용 · 30초마다 갱신</span>
+        <span className="muted small">30초마다 갱신</span>
         <button className="small" onClick={reload}>새로고침</button>
       </div>
       {error && <p className="error">{error}</p>}

@@ -7,12 +7,14 @@ import { Link } from 'react-router-dom'
 import { AgentEditor, RosterCards } from './agents/Roster'
 import { investApi, type AgentOptions, type SessionOrder } from './api'
 import { MODELS, ORDER_STATUS, sessionLabel, STANCE_LABEL } from './format'
+import { useReadOnly } from '../../shared/readOnly'
 import { useLoad } from '../../shared/useLoad'
 import { STATUS_LABEL } from '../runs/live'
 
 const GATE: Record<string, string> = { aligned: '게이트 열림', conflict: '의견 충돌', no_view: '모두 의견 없음', not_held: '보유 없음', incomplete: '응답 누락' }
 
 export default function AgentTeam() {
+  const readOnly = useReadOnly()  // 손님은 승인 방식 · 명단 · 토론 옵션을 보기만
   const [version, setVersion] = useState(0)
   const { data: agents, error: agentsError } = useLoad(() => investApi.agents(), [version])
   const { data: status } = useLoad(() => investApi.status(), [version])
@@ -42,7 +44,7 @@ export default function AgentTeam() {
 
   const auto = !!status?.agent_auto_approve
   return (
-    <>
+    <fieldset className="readonly-fieldset" disabled={readOnly}>
       <p className="notice small">
         🤝 <b>Invest &gt; AI Trading</b> 채팅방에서 쓰는 에이전트와 토론 설정을 여기서 정해요. 성향(프롬프트)과 도구(행동)가 다른 분석 에이전트들이
         한 종목·섹터·전체(보유+관심) 범위로 토론하고, 종목마다 모두 한 방향일 때만 트레이더가 주문을 제안해요. 이 기능은 수익을 보장하지 않아요 —
@@ -108,7 +110,7 @@ export default function AgentTeam() {
       </article>
 
       {editing && agents && <AgentEditor data={agents} onClose={() => setEditing(false)} onSaved={refresh} />}
-    </>
+    </fieldset>
   )
 }
 
