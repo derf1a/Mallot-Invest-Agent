@@ -19,7 +19,7 @@ from datetime import date, datetime
 
 from app.invest import assistant, briefing, market
 from app.invest.market import MarketError
-from app.invest.toss import TossError
+from app.invest.broker.toss import TossError
 from app.llm.client import LLMError, structured
 from app.system import issues
 

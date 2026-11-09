@@ -26,7 +26,7 @@ from datetime import date, datetime
 from app.invest import dart, market
 from app.invest.dart import DartError
 from app.invest.market import MarketError
-from app.invest.toss import TossError
+from app.invest.broker.toss import TossError
 
 S_STATE = "invest_dart_state"
 CORPS_DAYS = 7                # 고유번호 목록을 다시 받는 간격

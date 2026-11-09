@@ -424,7 +424,8 @@ def test_score_api_reads_back(client):
 
 
 def test_dart_key_saves_without_touching_toss_token(client, monkeypatch):
-    from app.invest import api as invest_api, config
+    from app.invest import api as invest_api
+    from app.invest.broker import config
     monkeypatch.setattr(config.envfile, "update", lambda values: None)
     cleared = []
     monkeypatch.setattr(invest_api, "clear_token_cache", lambda: cleared.append(1))

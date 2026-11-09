@@ -25,11 +25,12 @@ from collections.abc import Awaitable, Callable
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 
-from app.invest import agents, assistant, autopilot, dart, desk, market, news, policy, scopes, scorelog, screening, trading, valuation
+from app.invest import agents, assistant, autopilot, dart, desk, market, news, policy, scopes, scorelog, screening, valuation
+from app.invest.broker import trading
 from app.invest.desk import CASH_KO, REGIME_KO
 from app.invest.market import MarketError
-from app.invest.toss import TossError
-from app.invest.trading import TradeError
+from app.invest.broker.toss import TossError
+from app.invest.broker.trading import TradeError
 from app.llm.client import LLMError, structured
 
 REGIME_MOVE = 0.008       # 코드 대체: 코스피가 이만큼 넘게 오르면 위험 선호, 내리면 위험 회피

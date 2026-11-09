@@ -6,9 +6,10 @@
 import asyncio
 import json
 
-from app.invest import market, news, report, trading, watch
+from app.invest import market, news, report, watch
+from app.invest.broker import trading
 from app.invest.market import MarketError
-from app.invest.trading import TradeError
+from app.invest.broker.trading import TradeError
 from app.runs.runner import JobError, JobSpec, RunContext, register
 
 SCOPES = {"holdings": "보유 종목", "watchlist": "관심 종목", "market": "시장 전체", "all": "보유·관심·시장",

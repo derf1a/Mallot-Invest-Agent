@@ -34,10 +34,11 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Any
 
-from app.invest import config, exits, indicators, market, news, portfolio, trading, valuation
+from app.invest import exits, indicators, market, news, valuation
+from app.invest.broker import config, portfolio, trading
 from app.invest.market import MarketError
-from app.invest.toss import TossError
-from app.invest.trading import TradeError
+from app.invest.broker.toss import TossError
+from app.invest.broker.trading import TradeError
 from app.llm.client import LLMError, ToolDef, agentic
 
 STANCES = ("buy", "sell", "none")

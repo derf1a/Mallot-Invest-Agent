@@ -7,7 +7,7 @@ import sqlite3
 
 from app.invest import market
 from app.invest.market import MarketError
-from app.invest.toss import TossError
+from app.invest.broker.toss import TossError
 
 
 class WatchError(Exception):

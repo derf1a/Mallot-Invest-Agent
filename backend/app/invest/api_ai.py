@@ -9,11 +9,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from app.core.db import data_dir, get_conn
-from app.invest import advisor, agents, assistant, autopilot, briefing, config, desk, market, morning, news, policy, scopes
+from app.invest import advisor, agents, assistant, autopilot, briefing, desk, market, morning, news, policy, scopes
+from app.invest.broker import config
 from app.invest.deps import Pin, require_pin
 from app.invest.jobs.agent_action import post_user_message, read_messages
 from app.invest.jobs.news_report import resolve_targets
-from app.invest.trading import order_dict
+from app.invest.broker.trading import order_dict
 from app.runs.runner import JobError, load_run, run_dict, start_run
 from app.system import issues
 

@@ -7,7 +7,8 @@ import pytest
 
 from app import registry
 from app.core.db import connect
-from app.invest import agents, autopilot, config, scopes, service
+from app.invest import agents, autopilot, scopes, service
+from app.invest.broker import config
 from app.invest.market import KST, SampleMarket
 from app.llm.client import LLMError
 from app.runs.runner import start_run

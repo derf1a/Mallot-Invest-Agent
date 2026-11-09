@@ -7,7 +7,7 @@ toss.HTTP 자리에 끼워 쓴다. 시세는 샘플 시세(SampleMarket)를 그�
 import json
 import urllib.parse
 
-from app.invest import toss
+from app.invest.broker import toss
 from app.invest.market import SampleMarket
 
 ACCOUNT_SEQ = "1"

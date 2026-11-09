@@ -58,7 +58,8 @@ def isolated_env(tmp_path, monkeypatch):
     for key in ("TOSS_CLIENT_ID", "TOSS_CLIENT_SECRET", "TOSS_ACCOUNT_SEQ", "MIA_TRADING_PIN", "ANTHROPIC_API_KEY",
                 "DART_API_KEY", "MIA_VLLM_URL", "MIA_VLLM_API_KEY", "LANGSMITH_API_KEY", "MIA_MODELS_DIR"):
         monkeypatch.delenv(key, raising=False)
-    from app.invest import config, market, toss
+    from app.invest import market
+    from app.invest.broker import config, toss
 
     market.clear_cache()
     toss.clear_token_cache()
@@ -74,7 +75,8 @@ PIN = "2468"
 @pytest.fixture
 def broker(monkeypatch):
     """토스 키·주문 PIN 이 있는 상태 + 가짜 토스 계좌(tests/fake_broker.py). 시세는 샘플 시세 그대로."""
-    from app.invest import market, toss
+    from app.invest import market
+    from app.invest.broker import toss
     from app.invest.market import SampleMarket
     from tests.fake_broker import FakeBroker
 

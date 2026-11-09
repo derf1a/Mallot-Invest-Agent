@@ -22,7 +22,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from app.invest import indicators, valuation, watch
 from app.invest.market import MarketError
-from app.invest.toss import TossError
+from app.invest.broker.toss import TossError
 from app.llm.client import LLMError, structured
 
 SECTOR_TOP = 5

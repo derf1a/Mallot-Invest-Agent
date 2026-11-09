@@ -203,7 +203,8 @@ def test_meeting_minutes_written_by_assistant_or_code(client, broker, at_open, m
 
 
 def test_performance_and_briefing(client, broker, at_open):
-    from app.invest import briefing, trading
+    from app.invest import briefing
+    from app.invest.broker import trading
     from app.core.db import connect
     conn = connect()
     trading.place_order(conn, symbol="005930", side="buy", order_type="market", quantity=3, source="agent", run_id=None,
@@ -232,7 +233,8 @@ def test_report_summarizes_meetings_and_market_issues(client, broker, at_open, m
     """회의 요약(회의록·주문·다음에 볼 것, 진행 중인 채널은 지금 입장, 끊긴 회의는 뺌)과 장내 이슈(시장 뉴스·보유 종목 뉴스)."""
     import json
     from app.core.db import connect, data_dir
-    from app.invest import briefing, news, trading
+    from app.invest import briefing, news
+    from app.invest.broker import trading
     from tests.test_invest_ai import RSS
     conn = connect()
     monkeypatch.setattr(news, "HTTP", lambda *_a, **_k: (200, RSS.encode()))
@@ -388,7 +390,8 @@ def test_morning_briefing_daily(client, broker, monkeypatch):
 
 
 def test_assistant_changes_settings_by_chat(client, broker, at_open, monkeypatch):
-    from app.invest import config, morning
+    from app.invest import morning
+    from app.invest.broker import config
     fake = Fake([
         ("get_settings", {}),
         ("update_schedule", {"slots": ["09:10", "11:00", "13:30", "15:00"], "max_extra": 1}),
@@ -460,7 +463,8 @@ def test_briefing_on_holiday_when_not_skipping(client, monkeypatch):
 
 def test_baseline_return(client, broker, at_open, monkeypatch):
     from app.core.db import connect
-    from app.invest import briefing, trading
+    from app.invest import briefing
+    from app.invest.broker import trading
     conn = connect()
     assert client.get("/api/invest/performance").json()["baseline"] is None             # 기준을 정하기 전
     trading.place_order(conn, symbol="005930", side="buy", order_type="market", quantity=2, source="manual", confirm_live=True)

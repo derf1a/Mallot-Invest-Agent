@@ -16,8 +16,9 @@ from collections.abc import Callable
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from app.invest import config, indicators
-from app.invest.toss import TossClient, TossError, num, symbol_ok
+from app.invest import indicators
+from app.invest.broker import config
+from app.invest.broker.toss import TossClient, TossError, num, symbol_ok
 
 KST = ZoneInfo("Asia/Seoul")
 INDICATORS = [("KOSPI", "코스피", "pt"), ("KOSDAQ", "코스닥", "pt"), ("KR_BOND_3Y", "국고채 3년", "%"),

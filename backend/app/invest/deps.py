@@ -4,7 +4,7 @@ from typing import Annotated
 
 from fastapi import Header, HTTPException
 
-from app.invest import config
+from app.invest.broker import config
 
 
 def require_pin(pin: str | None, *, required: bool = True) -> None:
