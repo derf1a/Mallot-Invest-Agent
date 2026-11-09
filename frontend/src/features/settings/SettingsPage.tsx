@@ -2,6 +2,7 @@
 import { useSearchParams } from 'react-router-dom'
 import InvestSettings from '../invest/InvestSettings'
 import LlmSettings from './LlmSettings'
+import RoutesSettings from './RoutesSettings'
 
 const TABS = [
   { key: 'invest', label: '투자' },
@@ -22,7 +23,7 @@ export default function SettingsPage() {
           </button>
         ))}
       </div>
-      {tab === 'invest' ? <InvestSettings /> : <LlmSettings />}
+      {tab === 'invest' ? <InvestSettings /> : <><LlmSettings /><RoutesSettings /></>}
     </div>
   )
 }
