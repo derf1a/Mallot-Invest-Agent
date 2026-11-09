@@ -9,12 +9,12 @@ from types import SimpleNamespace
 import pytest
 
 from app.invest.advice import assistant
-from app.invest.ops import autopilot, desk, desk_agents
-from app.invest.debate import agents, stream, track
-from app.invest.marketdata import market
 from app.invest.broker import trading
+from app.invest.debate import agents, stream, track
 from app.invest.jobs import agent_action
+from app.invest.marketdata import market
 from app.invest.marketdata.market import SampleMarket
+from app.invest.ops import autopilot, desk, desk_agents
 from app.runs.runner import load_run
 from tests.test_invest import PIN, at_open  # noqa: F401
 from tests.test_invest_ai import Script

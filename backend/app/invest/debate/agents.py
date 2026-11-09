@@ -35,11 +35,11 @@ from datetime import date
 from typing import Any
 
 from app.invest.analysis import exits, valuation
-from app.invest.marketdata import indicators, market, news
 from app.invest.broker import config, portfolio, trading
-from app.invest.marketdata.market import MarketError
 from app.invest.broker.toss import TossError
 from app.invest.broker.trading import TradeError
+from app.invest.marketdata import indicators, market, news
+from app.invest.marketdata.market import MarketError
 from app.llm.client import LLMError, ToolDef, agentic
 
 STANCES = ("buy", "sell", "none")

@@ -6,10 +6,10 @@ from datetime import datetime
 import pytest
 
 from app.invest.advice import assistant
-from app.invest.ops import autopilot
 from app.invest.debate import agents
 from app.invest.marketdata import market
 from app.invest.marketdata.market import KST
+from app.invest.ops import autopilot
 from app.llm.client import LLMError
 from tests.test_invest import PIN, at_open  # noqa: F401 — 장중 시각 고정 fixture
 
@@ -287,7 +287,7 @@ def test_report_history_and_sector_rates(client, broker, at_open, monkeypatch):
     """수익률 추이: 지나간 보고서(기준 원금 시작일이 같은 것)의 값 + 지금, 지수는 시작 전 종가 대비. 섹터 의견에는 기간 등락."""
     from datetime import timedelta
     from app.core.db import connect
-    from app.invest.advice import policy
+    from app.invest.analysis import policy
     from app.invest.ops import briefing, desk
     from app.invest.marketdata import market, news
     from app.invest.marketdata.market import MarketError, SampleMarket

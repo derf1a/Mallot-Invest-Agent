@@ -20,16 +20,15 @@ import json
 import threading
 from datetime import datetime
 
-from app.invest.advice import policy
-from app.invest.ops import autopilot, desk
-from app.invest.debate import agents, minutes, scopes, stream
-from app.invest.analysis import exits, screening
-from app.invest.marketdata import market
+from app.invest.analysis import exits, policy, screening
 from app.invest.broker import config
-from app.invest.marketdata.market import MarketError
 from app.invest.broker.toss import TossError
-from app.runs.runner import Cancelled, JobError, JobSpec, RunContext, register
+from app.invest.debate import agents, minutes, scopes, stream
+from app.invest.marketdata import market
+from app.invest.marketdata.market import MarketError
+from app.invest.ops import autopilot, desk
 from app.llm.client import LLMError
+from app.runs.runner import Cancelled, JobError, JobSpec, RunContext, register
 from app.system import issues
 
 DEFAULTS = {"scope": "symbol", "symbol": "", "sector_id": "", "note": "", "rounds": None, "model": None, "autopilot": False}

@@ -5,9 +5,8 @@
 import asyncio
 from datetime import timedelta
 
-from app.invest.advice import policy
+from app.invest.analysis import exits, policy, screening
 from app.invest.debate import agents, minutes, scopes, stream
-from app.invest.analysis import exits, screening
 from app.invest.marketdata.market import SampleMarket
 from tests.test_invest import at_open  # noqa: F401 — fixture
 from tests.test_invest_ai import Script, _start

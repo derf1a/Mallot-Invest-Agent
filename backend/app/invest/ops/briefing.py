@@ -27,13 +27,13 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from app.core.db import data_dir
-from app.invest.advice import policy
-from app.invest.ops import autopilot, desk
-from app.invest.marketdata import market, news
+from app.invest.analysis import policy
 from app.invest.broker import portfolio
-from app.invest.marketdata.market import MarketError
 from app.invest.broker.toss import TossError
 from app.invest.broker.trading import TradeError
+from app.invest.marketdata import market, news
+from app.invest.marketdata.market import MarketError
+from app.invest.ops import autopilot, desk
 from app.system import issues
 
 AI_ORDERS = 50   # AI 주문 성과에 보는 최근 체결 주문 수

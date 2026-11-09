@@ -24,10 +24,10 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime
 
 from app.invest.analysis import dart
-from app.invest.marketdata import market
 from app.invest.analysis.dart import DartError
-from app.invest.marketdata.market import MarketError
 from app.invest.broker.toss import TossError
+from app.invest.marketdata import market
+from app.invest.marketdata.market import MarketError
 
 S_STATE = "invest_dart_state"
 CORPS_DAYS = 7                # 고유번호 목록을 다시 받는 간격

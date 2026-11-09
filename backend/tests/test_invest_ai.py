@@ -4,9 +4,9 @@ import re
 import pytest
 
 from app.core.db import connect
-from app.invest.ops import report
 from app.invest.debate import agents
 from app.invest.marketdata import news
+from app.invest.ops import report
 from app.llm.client import LLMError
 from tests.test_invest import PIN, at_open  # noqa: F401 — 장중 시각 고정 fixture
 

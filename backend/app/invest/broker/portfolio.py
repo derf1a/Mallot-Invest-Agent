@@ -9,10 +9,10 @@ import sqlite3
 from concurrent.futures import ThreadPoolExecutor
 
 from app.invest.analysis import screening
-from app.invest.marketdata import market as market_mod
 from app.invest.broker import trading
-from app.invest.marketdata.market import MarketError
 from app.invest.broker.toss import TossError, num
+from app.invest.marketdata import market as market_mod
+from app.invest.marketdata.market import MarketError
 
 
 INDICATOR_WORKERS = 4
