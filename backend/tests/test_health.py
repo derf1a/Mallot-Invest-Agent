@@ -1,8 +1,2 @@
-from fastapi.testclient import TestClient
-
-from app.main import app
-
-
-def test_health() -> None:
-    with TestClient(app) as c:
-        assert c.get("/api/health").json() == {"ok": True}
+def test_health_reports_db_version(client) -> None:
+    assert client.get("/api/health").json() == {"ok": True, "db_version": 1}
