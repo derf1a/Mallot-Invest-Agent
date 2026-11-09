@@ -9,7 +9,7 @@ from datetime import date, datetime
 
 import pytest
 
-from app.invest import desk_agents
+from app.invest.ops import desk_agents
 from app.invest.debate import agents
 from app.invest.analysis import dart, scorelog, screening, valuation
 from app.invest.marketdata import market
@@ -366,7 +366,7 @@ def test_pool_adds_sector_mid_caps_and_value(conn):
 
 
 def test_research_excludes_holdings_and_records_everything(conn, broker, at_open, monkeypatch):
-    from app.invest import autopilot
+    from app.invest.ops import autopilot
     fill(conn, "005930", 100e9, 15e9)
     autopilot.add_intent(conn, "NAVER 를 눈여겨보자")                # 운용 지시에 나와도 보유면 발굴이 아니라 회의에서 본다
     monkeypatch.setattr(desk_agents, "_held", lambda c, p, notes: {"035420"})

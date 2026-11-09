@@ -17,7 +17,7 @@ import json
 import sqlite3
 from datetime import date, datetime
 
-from app.invest import autopilot
+from app.invest.ops import autopilot
 from app.invest.marketdata import market
 from app.runs.runner import run_dict, start_run
 

@@ -27,7 +27,8 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from app.core.db import data_dir
-from app.invest import autopilot, desk, policy
+from app.invest import policy
+from app.invest.ops import autopilot, desk
 from app.invest.marketdata import market, news
 from app.invest.broker import portfolio
 from app.invest.marketdata.market import MarketError
@@ -213,7 +214,7 @@ def _kr(symbol: str) -> bool:
 
 def _holdings(p, perf: dict) -> tuple[list[dict], int]:
     """보유 종목 — 평가 금액 큰 순 HOLDINGS 개(나머지는 개수만) + 오늘 등락(국내 종목, 일봉 두 개)."""
-    from app.invest.desk_agents import day_change  # desk_agents 가 assistant → 이 모듈을 불러서 늦게
+    from app.invest.ops.desk_agents import day_change  # desk_agents 가 assistant → 이 모듈을 불러서 늦게
 
     pf = perf.get("portfolio")
     if not pf:

@@ -35,7 +35,8 @@ import threading
 from collections.abc import Awaitable, Callable
 
 from app.core.db import connect
-from app.invest import autopilot, briefing, desk, policy
+from app.invest import policy
+from app.invest.ops import autopilot, briefing, desk
 from app.invest.debate import agents, scopes
 from app.invest.marketdata import market
 from app.invest.broker import config
@@ -479,7 +480,7 @@ def build_tools(conn: sqlite3.Connection, s: agents.Session, used: list[str], mo
         return {"ok": True, "before": before, "after": after}
 
     async def update_briefing(a: dict) -> dict:
-        from app.invest import morning
+        from app.invest.ops import morning
         before = morning.get_config(conn)
         try:
             after = morning.save_config(

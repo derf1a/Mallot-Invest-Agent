@@ -6,7 +6,7 @@
 import asyncio
 import json
 
-from app.invest import report
+from app.invest.ops import report
 from app.invest.marketdata import market, news, watch
 from app.invest.broker import trading
 from app.invest.marketdata.market import MarketError

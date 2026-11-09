@@ -7,7 +7,8 @@ import pytest
 
 from app import registry
 from app.core.db import connect
-from app.invest import autopilot, service
+from app.invest import service
+from app.invest.ops import autopilot
 from app.invest.debate import agents, scopes
 from app.invest.broker import config
 from app.invest.marketdata.market import KST, SampleMarket

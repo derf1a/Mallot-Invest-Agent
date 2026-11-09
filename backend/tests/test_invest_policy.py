@@ -5,7 +5,8 @@ import re
 
 import pytest
 
-from app.invest import advisor, assistant, autopilot, briefing, desk, policy
+from app.invest import advisor, assistant, policy
+from app.invest.ops import autopilot, briefing, desk
 from app.invest.debate import agents, scopes
 from app.invest.analysis import screening
 from app.invest.marketdata.market import SampleMarket

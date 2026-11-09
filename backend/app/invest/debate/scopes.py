@@ -15,7 +15,8 @@ import re
 import sqlite3
 from collections.abc import Callable
 
-from app.invest import desk, policy
+from app.invest import policy
+from app.invest.ops import desk
 from app.invest.analysis import exits, scorelog, screening
 from app.invest.marketdata import market, watch
 from app.invest.broker import trading

@@ -4,7 +4,7 @@ import re
 import pytest
 
 from app.core.db import connect
-from app.invest import report
+from app.invest.ops import report
 from app.invest.debate import agents
 from app.invest.marketdata import news
 from app.llm.client import LLMError
@@ -448,7 +448,7 @@ def test_holding_indicators_table(client, broker, at_open):
 
 def test_performance_items_by_stock_order_and_meeting(client, broker, at_open):
     from app.core.db import connect
-    from app.invest import briefing
+    from app.invest.ops import briefing
     from app.invest.marketdata.market import SampleMarket
     broker.positions["005930"] = {"quantity": 10.0, "cost": 700_000.0}
     broker.positions["000660"] = {"quantity": 1.0, "cost": 400_000.0}

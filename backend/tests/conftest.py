@@ -16,7 +16,8 @@ def runs_sync(monkeypatch):
 def no_real_llm(monkeypatch):
     """테스트가 실제 LLM·뉴스를 부르지 않게 — 따로 가짜를 넣지 않은 투자 비서·회의록·일정 담당·운용 데스크는 실패로(코드 대체 경로를
     탄다), 뉴스 RSS 는 연결 실패로."""
-    from app.invest import advisor, assistant, autopilot, desk_agents, morning
+    from app.invest import advisor, assistant
+    from app.invest.ops import autopilot, desk_agents, morning
     from app.invest.debate import minutes
     from app.invest.analysis import screening
     from app.invest.marketdata import news
@@ -35,7 +36,7 @@ def no_real_llm(monkeypatch):
 def meetings_mode(monkeypatch):
     """테스트의 자동 운용 기본은 정기 회의 — 상시 운용 테스트만 mode=continuous 로 켠다. 상시 운용 채널이 실제로 기다리면(시계를
     돌리지 않은 테스트) 멈추지 않고 바로 실패하게."""
-    from app.invest import autopilot
+    from app.invest.ops import autopilot
     from app.invest.debate import stream
 
     monkeypatch.setattr(autopilot, "DEFAULT_CONFIG", {**autopilot.DEFAULT_CONFIG, "mode": "meetings"})

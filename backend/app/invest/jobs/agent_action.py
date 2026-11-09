@@ -20,7 +20,8 @@ import json
 import threading
 from datetime import datetime
 
-from app.invest import autopilot, desk, policy
+from app.invest import policy
+from app.invest.ops import autopilot, desk
 from app.invest.debate import agents, minutes, scopes, stream
 from app.invest.analysis import exits, screening
 from app.invest.marketdata import market
