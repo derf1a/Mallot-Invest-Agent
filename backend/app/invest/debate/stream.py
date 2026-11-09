@@ -41,6 +41,7 @@ from app.invest.debate import agents, scopes, track
 from app.invest.marketdata import market
 from app.invest.marketdata.market import MarketError
 from app.invest.ops import autopilot, desk
+from app.core import trace
 from app.llm.client import LLMError
 from app.llm.routes import as_agent
 from app.system import issues
@@ -437,6 +438,7 @@ class Stream:
         return chosen[:SPEAKERS + (1 if kind == "user" else 0)]
 
     # ---- 대화 ----
+    @trace.traced("step", lambda self, trig, now: f"대화 · {KIND_KO.get(trig.get('kind'), '') or trig.get('kind') or '계기'}")
     async def talk(self, trig: dict, now: datetime) -> None:
         focus = self._focus(trig.get("symbols") or [])
         s = self._session(focus, f"{KIND_KO.get(trig['kind'], trig['kind'])} — {trig['text']}")
@@ -489,6 +491,7 @@ class Stream:
         for by, text in system_asks(stmts):
             issues.report(self.conn, text, by, now=now)
 
+    @trace.traced("step", "리서치 담당 답변")
     async def answer_research(self, stmts: list[dict], now: datetime) -> None:
         """리서치 담당이 채널의 부탁에 답한다 — 입장 없이 말풍선으로, 다음 대화부터 에이전트들이 읽는다."""
         for key, asks in research_asks(stmts).items():
@@ -535,6 +538,7 @@ class Stream:
                                "symbols": [c["symbol"] for c in added]})
         return added
 
+    @trace.traced("step", "필수 의견")
     async def poll(self, aligned: list[dict], why: str, now: datetime) -> None:
         """주문 전 필수 의견 — 찬반이 없는 분석 에이전트 전원에게 그 종목을 묻는다. 의견 없음이면 POLL_TRIES 번까지 다시 묻는다."""
         ask = [a for a in self.analysts if any(self.board.stance(a["key"], x["symbol"], now) not in ("buy", "sell") for x in aligned)]
@@ -584,6 +588,7 @@ class Stream:
                   if aligned else "필수 의견을 받은 뒤 열린 종목이 없어요")
         return {**gate, "symbols": {**gate["symbols"], **per}, "aligned": aligned, "status": "aligned" if aligned else "conflict", "reason": reason}
 
+    @trace.traced("step", "트레이더 점검")
     async def review(self, now: datetime) -> None:
         """트레이더 점검 — 스스로 사거나 팔 종목을 내놓으면 그 종목으로 대화가 열린다."""
         self.last_trader = now
@@ -620,6 +625,7 @@ class Stream:
     def _blocked(self) -> str | None:
         return autopilot.blocked(self.conn)
 
+    @trace.traced("step", "주문 판단")
     async def trade(self, now: datetime, why: str) -> None:
         left = MAX_DAY_ORDERS - len(self.orders)
         if left <= 0 or self._blocked():

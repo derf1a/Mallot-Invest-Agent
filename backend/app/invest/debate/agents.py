@@ -40,6 +40,7 @@ from app.invest.broker.toss import TossError
 from app.invest.broker.trading import TradeError
 from app.invest.marketdata import indicators, market, news
 from app.invest.marketdata.market import MarketError
+from app.core import trace
 from app.llm.client import LLMError, ToolDef, agentic
 from app.llm.routes import as_agent
 
@@ -965,9 +966,11 @@ async def run_session(s: Session, roster: list[dict], *, rounds: int = 2, model:
     for rnd in range(1, max(1, rounds) + 1):
         if check_cancel:
             check_cancel()
-        s.emit({"type": "round", "round": rnd, "label": "독립 의견" if rnd == 1 else "설득·반박",
-                "agents": [a["key"] for a in analysts]})
-        stmts = await asyncio.gather(*(speak(a, rnd, prev) for a in analysts))
+        label = "독립 의견" if rnd == 1 else "설득·반박"
+        s.emit({"type": "round", "round": rnd, "label": label, "agents": [a["key"] for a in analysts]})
+        with trace.span("step", f"라운드 {rnd} · {label}", attrs={"round": rnd, "agents": [a["key"] for a in analysts]}) as sp:
+            stmts = await asyncio.gather(*(speak(a, rnd, prev) for a in analysts))
+            sp.output = {st["agent"]: st.get("views") for st in stmts}
         transcript.extend(stmts)
         prev = list(stmts)
 

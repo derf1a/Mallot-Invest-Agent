@@ -506,3 +506,24 @@ def test_each_agent_call_carries_its_agent_key_for_routing(client, monkeypatch, 
     assert _start(client, rounds=2).json()["status"] == "succeeded"
     assert seen["차티스트"] == {"technical"} and seen["리스크 매니저"] == {"risk"} and seen["트레이더"] == {"trader"}
     assert routes.AGENT.get() is None  # 호출이 끝나면 표시가 풀린다
+
+
+def test_debate_session_leaves_a_trace_tree(client, monkeypatch, broker, at_open):
+    from app.core.db import connect
+
+    script = Script(ALIGNED, trade={"side": "buy", "quantity": 1, "order_type": "market", "reason": "합의"})
+    monkeypatch.setattr(agents, "LLM", script)
+    run = _start(client, rounds=2).json()
+    with connect() as conn:
+        spans = [dict(r) for r in conn.execute("SELECT * FROM trace_spans WHERE run_id = ? ORDER BY start_ms, rowid", (run["id"],))]
+    by_id = {s["id"]: s for s in spans}
+    root = next(s for s in spans if s["kind"] == "run")
+    assert root["parent_id"] is None and {s["trace_id"] for s in spans} == {root["id"]}
+    rounds = [s for s in spans if s["kind"] == "step"]
+    assert [s["name"] for s in rounds] == ["라운드 1 · 독립 의견", "라운드 2 · 설득·반박"]
+    speakers = [s for s in spans if s["kind"] == "agent" and by_id[s["parent_id"]]["kind"] == "step"]
+    assert {s["agent"] for s in speakers} >= {"technical", "value", "risk"}
+    events = [s["name"] for s in spans if s["kind"] == "event"]
+    assert "gate" in events and "decision" in events and "order" in events
+    trader = next(s for s in spans if s["kind"] == "agent" and s["agent"] == "trader")
+    assert trader["parent_id"] == root["id"]

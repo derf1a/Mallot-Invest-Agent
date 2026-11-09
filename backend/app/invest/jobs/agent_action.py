@@ -20,6 +20,7 @@ import json
 import threading
 from datetime import datetime
 
+from app.core import trace
 from app.invest.analysis import exits, policy, screening
 from app.invest.broker import config
 from app.invest.broker.toss import TossError
@@ -38,10 +39,14 @@ _LIVE: dict[int, "Chat"] = {}  # 진행 중인 세션의 채팅 (run_id → Chat
 _LIVE_LOCK = threading.Lock()
 
 
+TRACE_EVENTS = {"user", "gate", "decision", "order", "schedule", "end"}
+
+
 class Chat:
     """messages.jsonl 쓰기 (순번·시각을 붙여 한 줄씩) + 관리자 의견 모음."""
 
     def __init__(self, ctx: RunContext):
+        self.root = trace.current()  # 실행 span — 다른 스레드(관리자 채팅 API)에서 온 말도 이 실행 아래에 남긴다
         self.path = ctx.artifact_dir / MESSAGES
         self.seq = 0
         self.lock = threading.Lock()
@@ -55,7 +60,9 @@ class Chat:
                 f.write(json.dumps(line, ensure_ascii=False, default=str) + "\n")
             if event.get("type") == "user":
                 self.user_notes.append({"ts": line["ts"][:5], "text": event["text"]})
-            return line
+        if event.get("type") in TRACE_EVENTS:
+            trace.event(event["type"], event, parent=trace.current() or self.root)
+        return line
 
     def notes(self) -> list[dict]:
         with self.lock:
