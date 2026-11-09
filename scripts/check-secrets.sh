@@ -19,8 +19,8 @@ if [ -n "$bad" ]; then
   echo "[check-secrets] 커밋하면 안 되는 파일:"; printf '  %s\n' $bad; fail=1
 fi
 
-# 2) 값이 채워진 키 · 토큰 모양
-patterns='sk-ant-[A-Za-z0-9_-]{20,}|gh[pousr]_[A-Za-z0-9]{30,}|AKIA[0-9A-Z]{16}|-----BEGIN [A-Z ]*PRIVATE KEY-----|lsv2_[a-z]{2}_[A-Za-z0-9]{20,}|(TOSS_CLIENT_SECRET|TOSS_CLIENT_ID|ANTHROPIC_API_KEY|DART_API_KEY|LANGSMITH_API_KEY|MIA_TRADING_PIN|MIA_VLLM_API_KEY)=[^[:space:]$"'"'"']+'
+# 2) 값이 채워진 키 · 토큰 모양 (.env 처럼 줄 맨 앞의 KEY=값 — 코드 문자열 속 가짜 값은 건드리지 않는다)
+patterns='sk-ant-[A-Za-z0-9_-]{20,}|gh[pousr]_[A-Za-z0-9]{30,}|AKIA[0-9A-Z]{16}|-----BEGIN [A-Z ]*PRIVATE KEY-----|lsv2_[a-z]{2}_[A-Za-z0-9]{20,}|^[[:space:]]*(export[[:space:]]+)?(TOSS_CLIENT_SECRET|TOSS_CLIENT_ID|TOSS_ACCOUNT_SEQ|ANTHROPIC_API_KEY|DART_API_KEY|LANGSMITH_API_KEY|MIA_TRADING_PIN|MIA_VLLM_API_KEY)[[:space:]]*=[[:space:]]*[^[:space:]#]+'
 for f in $files; do
   [ -f "$f" ] || continue
   case "$f" in scripts/check-secrets.sh) continue ;; esac

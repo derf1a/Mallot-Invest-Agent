@@ -254,3 +254,14 @@ def test_download_runs_in_background_and_can_be_cancelled(client, monkeypatch):
     assert len(started) == 1  # 받는 중이면 다시 띄우지 않는다
     st = client.post(f"/api/llm/local/models/{KEY}/cancel").json()
     assert not st["downloading"] and st["error"] is None
+
+
+def test_agent_options_accept_local_model(client, broker):
+    from tests.conftest import PIN
+
+    r = client.put("/api/invest/agents/options", json={"model": "local"}, headers={"X-Trading-Pin": PIN})
+    assert r.status_code == 200 and r.json()["options"]["model"] == "local"
+    assert client.put("/api/invest/agents/options", json={"model": "gpt-9"}, headers={"X-Trading-Pin": PIN}).status_code == 400
+    with connect() as conn:
+        assert json.loads(conn.execute("SELECT value FROM settings WHERE key = 'invest_agent_options'").fetchone()[0])[
+            "model"] == "local"
