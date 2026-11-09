@@ -36,6 +36,7 @@ from app.invest.marketdata.market import MarketError
 from app.invest.ops import autopilot, desk
 from app.invest.ops.desk import CASH_KO, REGIME_KO
 from app.llm.client import LLMError, structured
+from app.llm.routes import as_agent
 
 REGIME_MOVE = 0.008       # 코드 대체: 코스피가 이만큼 넘게 오르면 위험 선호, 내리면 위험 회피
 NEWS_TITLES = 10
@@ -177,7 +178,8 @@ def _strs(v: object, n: int = 4) -> list[str]:
 
 def market_view(conn, p, intents: str, model: str | None, notes: list[str], reason: str = "", goal: str = "") -> dict:
     f = market_facts(conn, p, notes)
-    raw = _ask(MARKET_SYSTEM, market_text(f, intents, reason, goal), MARKET_SCHEMA, model)
+    with as_agent("strategist"):
+        raw = _ask(MARKET_SYSTEM, market_text(f, intents, reason, goal), MARKET_SCHEMA, model)
     if raw and raw.get("regime") in REGIME_KO and str(raw.get("headline") or "").strip():
         view = {"regime": raw["regime"], "headline": str(raw["headline"]).strip()[:80], "summary": str(raw.get("summary") or "").strip()[:600],
                 "favor": _strs(raw.get("favor")), "avoid": _strs(raw.get("avoid")),
@@ -305,7 +307,8 @@ def sector_view(conn, p, view: dict, intents: str, model: str | None, notes: lis
     flagged = {s["id"] for s in scopes.intent_sectors(p, "\n".join([intents, *prefer]))}
     out = None
     if rows:
-        raw = _ask(SECTOR_SYSTEM, sector_text(rows, flagged, view, intents, goal), SECTOR_SCHEMA, model)
+        with as_agent("sector"):
+            raw = _ask(SECTOR_SYSTEM, sector_text(rows, flagged, view, intents, goal), SECTOR_SCHEMA, model)
         by_id = {r["id"]: r for r in rows}
 
         def keep(items: object, limit: int, taken: set[str]) -> list[dict]:
@@ -381,7 +384,8 @@ def scout(conn, p, mv: dict, sv: dict, intents: str, model: str | None, notes: l
            + "\n- 비중 확대 섹터: " + ("; ".join(f"{x['name']}({x['reason'][:60]})" for x in sv["overweight"]) or "없음")
            + ("\n- 비중 축소 섹터: " + ", ".join(x["name"] for x in sv["underweight"]) if sv["underweight"] else "")
            + (f"\n- 운용 목표:\n{goal}" if goal else ""))
-    chosen = screening.llm_pick(fresh, intents, IDEAS, model, context=ctx, system=SCOUT_SYSTEM, feature="invest_desk", ask="발굴 목록", strict=True)
+    chosen = screening.llm_pick(fresh, intents, IDEAS, model, context=ctx, system=SCOUT_SYSTEM, feature="invest_desk", ask="발굴 목록", strict=True,
+                                agent="scout")
     by_sym = {r["symbol"]: r for r in rows}
     picks = [{"symbol": x["symbol"], "name": by_sym[x["symbol"]]["name"], "security_type": by_sym[x["symbol"]]["security_type"],
               "sources": by_sym[x["symbol"]]["sources"], "score": by_sym[x["symbol"]]["score"], "reason": x["reason"]}

@@ -41,6 +41,7 @@ from app.invest.broker.trading import TradeError
 from app.invest.marketdata import indicators, market, news
 from app.invest.marketdata.market import MarketError
 from app.llm.client import LLMError, ToolDef, agentic
+from app.llm.routes import as_agent
 
 STANCES = ("buy", "sell", "none")
 STANCE_KO = {"buy": "매수", "sell": "매도", "none": "의견 없음", "mixed": "종목별"}
@@ -948,8 +949,9 @@ async def run_session(s: Session, roster: list[dict], *, rounds: int = 2, model:
         prompt = round1_prompt(s) if rnd == 1 else rebuttal_prompt(s, agent, rnd, prev)
         schema = OPINION_SCHEMA if rnd == 1 else REBUTTAL_SCHEMA
         try:
-            raw = await LLM("agent_action", system_prompt(agent, s), prompt, schema,
-                            build_tools(s, agent["tools"], agent["key"]), model, turns)
+            with as_agent(agent["key"]):
+                raw = await LLM("agent_action", system_prompt(agent, s), prompt, schema,
+                                build_tools(s, agent["tools"], agent["key"]), model, turns)
             st = normalize_statement(raw, agent, rnd, mine, s.symbols)
         except LLMError as e:
             st = normalize_statement({}, agent, rnd, None, s.symbols)
@@ -985,8 +987,9 @@ async def run_session(s: Session, roster: list[dict], *, rounds: int = 2, model:
     needs_approval = not (s.auto_submit or config.agent_auto_approve(s.conn))
     s.emit({"type": "trader_start", "agent": executor["key"], "title": executor["title"]})
     try:
-        raw = await LLM("agent_action", system_prompt(executor, s), trader_prompt(s, transcript, gate, needs_approval),
-                        TRADER_SCHEMA, build_tools(s, executor["tools"], executor["key"]), model, turns + 4)
+        with as_agent(executor["key"]):
+            raw = await LLM("agent_action", system_prompt(executor, s), trader_prompt(s, transcript, gate, needs_approval),
+                            TRADER_SCHEMA, build_tools(s, executor["tools"], executor["key"]), model, turns + 4)
         decision = normalize_decision(raw, s, executor)
     except (LLMError, TypeError, ValueError) as e:
         decision = {"decisions": [], "decision": "hold", "quantity": 0,

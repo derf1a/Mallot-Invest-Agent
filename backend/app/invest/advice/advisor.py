@@ -22,6 +22,7 @@ from app.invest.debate import agents
 from app.invest.marketdata import market
 from app.invest.ops import desk
 from app.llm.client import LLMError, ToolDef, agentic
+from app.llm.routes import as_agent
 
 log = logging.getLogger("uvicorn.error")
 
@@ -219,7 +220,8 @@ def _llm_turn(conn: sqlite3.Connection, st: dict, new: str | None) -> tuple[dict
     s.titles[KEY] = PROFILE["title"]
     done: dict = {}
     model = config.agent_options(conn)["model"] or None
-    raw = asyncio.run(LLM("invest_assistant", SYSTEM, _context(conn, st, new), REPLY_SCHEMA, _tools(conn, s, done), model, LLM_TURNS))
+    with as_agent("advisor"):
+        raw = asyncio.run(LLM("invest_assistant", SYSTEM, _context(conn, st, new), REPLY_SCHEMA, _tools(conn, s, done), model, LLM_TURNS))
     reply = str((raw or {}).get("reply") or "").strip()
     if not reply:
         raise ValueError("빈 답")

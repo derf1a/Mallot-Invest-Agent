@@ -494,3 +494,15 @@ def test_stale_news_report_is_not_handed_to_agents(client, monkeypatch):
     conn.execute("UPDATE runs SET finished_at = ?", (market.now_kst().strftime("%Y-%m-%d %H:%M:%S"),))
     conn.commit()
     assert asyncio.run(agents._handlers(s)["get_latest_report"]({}))["headline"] == "옛 리포트"
+
+
+def test_each_agent_call_carries_its_agent_key_for_routing(client, monkeypatch, broker, at_open):
+    from app.llm import routes
+
+    seen: dict[str, set] = {}
+    script = Script(ALIGNED, trade={"side": "buy", "quantity": 1, "order_type": "market", "reason": "합의"},
+                    hook=lambda title, _p: seen.setdefault(title, set()).add(routes.AGENT.get()))
+    monkeypatch.setattr(agents, "LLM", script)
+    assert _start(client, rounds=2).json()["status"] == "succeeded"
+    assert seen["차티스트"] == {"technical"} and seen["리스크 매니저"] == {"risk"} and seen["트레이더"] == {"trader"}
+    assert routes.AGENT.get() is None  # 호출이 끝나면 표시가 풀린다
