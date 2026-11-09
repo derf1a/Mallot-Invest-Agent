@@ -1,0 +1,72 @@
+/* ---------- 로그인 · 손님(공유) 화면 — 휴대폰을 먼저 생각한다 ---------- */
+.page-error { padding: 24px; }
+.login-page { min-height: 100dvh; display: grid; place-items: center; padding: 16px; background: var(--bg); }
+.login-card { width: min(380px, 100%); display: flex; flex-direction: column; gap: 14px; }
+.login-brand { display: flex; align-items: center; gap: 10px; font-family: var(--font-display); font-size: 1.15rem; }
+.login-card input { width: 100%; font-size: 16px; }  /* iOS 는 16px 보다 작으면 입력할 때 화면을 확대한다 */
+.nav-button { width: 100%; border: none; background: none; text-align: left; cursor: pointer; }
+
+.viewer-app { min-height: 100dvh; background: var(--bg); }
+.viewer-bar {
+  position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 8px;
+  padding: calc(10px + env(safe-area-inset-top)) 16px 10px; background: var(--surface); border-bottom: 1px solid var(--border);
+  font-family: var(--font-display);
+}
+.viewer-actions { margin-left: auto; display: flex; gap: 12px; }
+.viewer-content { max-width: 1100px; margin: 0 auto; padding: 16px 16px calc(84px + env(safe-area-inset-bottom)); }
+
+.share-page .page-header { flex-wrap: wrap; }
+.share-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; }
+.share-card { display: flex; flex-direction: column; gap: 8px; }
+.share-card h3 { margin: 0; display: flex; align-items: center; gap: 8px; }
+.share-card p { margin: 0; }
+.share-schedule, .share-alerts, .share-sessions, .share-reports { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.share-schedule li { padding: 6px 0; border-top: 1px solid var(--border); }
+.share-ideas, .share-orders { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip.up { background: var(--up-soft); color: var(--up); }
+.chip.down { background: var(--down-soft); color: var(--down); }
+.chip.stance-buy { background: var(--up-soft); color: var(--up); }
+.chip.stance-sell { background: var(--down-soft); color: var(--down); }
+.share-section { display: flex; flex-direction: column; gap: 10px; }
+.share-section-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.share-section-head h2 { margin: 0; font-size: 1.15rem; }
+.share-sessions li { display: flex; flex-direction: column; gap: 6px; }
+.share-session-head {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px; width: 100%;
+  border: none; background: none; padding: 0; text-align: left; cursor: pointer;
+}
+.share-transcript { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; padding: 10px; border-radius: 10px; background: var(--chat-bg); max-height: 70vh; overflow: auto; }
+.share-line { display: flex; gap: 8px; align-items: flex-start; padding: 8px 10px; border-radius: 10px; background: var(--bubble); color: var(--bubble-mine-text); font-size: 0.88rem; }
+.share-line p { margin: 4px 0 0; }
+.share-line .chip { margin-right: 4px; }
+.share-line.admin { background: var(--bubble-mine); align-self: flex-end; }
+.share-line.trader { border-left: 3px solid var(--accent); }
+.share-line.order { background: var(--up-soft); }
+.share-line.minutes { background: var(--chat-card); }
+.share-divider { align-self: center; padding: 2px 10px; border-radius: 999px; background: var(--chat-pill); color: var(--chat-pill-text); font-size: 0.75rem; }
+.share-divider.gate { background: var(--accent); }
+.share-link { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
+.share-link img { border-radius: 8px; background: #fff; padding: 6px; }
+.share-url { display: block; word-break: break-all; padding: 8px; border-radius: 8px; background: var(--surface); font-size: 0.8rem; }
+
+/* 휴대폰 탭 막대 — 넓은 화면에서는 숨기고 모든 칸을 펼친다 */
+.share-tabbar { display: none; }
+@media (max-width: 768px) {
+  .share-page[data-tab='status'] .share-section:not([data-tab='status']),
+  .share-page[data-tab='report'] .share-section:not([data-tab='report']),
+  .share-page[data-tab='meetings'] .share-section:not([data-tab='meetings']) { display: none; }
+  .share-tabbar {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; display: grid; grid-template-columns: repeat(3, 1fr);
+    padding: 6px 8px calc(6px + env(safe-area-inset-bottom)); background: var(--surface); border-top: 1px solid var(--border);
+  }
+  .share-tabbar button {
+    display: flex; flex-direction: column; align-items: center; gap: 2px; border: none; background: none;
+    font-size: 0.75rem; color: var(--muted); padding: 6px 0; min-height: 44px;
+  }
+  .share-tabbar button span { font-size: 1.15rem; line-height: 1; }
+  .share-tabbar button.on { color: var(--accent); font-weight: 650; }
+  /* 관리자 화면 안의 미리 보기는 아래 여백을 탭 막대만큼 */
+  .content .share-page { padding-bottom: 72px; }
+  .share-grid { grid-template-columns: minmax(0, 1fr); }
+  .viewer-actions .link { font-size: 0.8rem; }
+}

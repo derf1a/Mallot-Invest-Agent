@@ -1,5 +1,5 @@
 # 진입점. 실제 동작은 scripts/*.sh 에 있다.
-.PHONY: help install hooks dev serve test check-secrets
+.PHONY: help install hooks dev serve share tunnel-setup admin-password test check-secrets
 
 help: ## 명령 목록
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  make %-14s %s\n", $$1, $$2}'
@@ -16,6 +16,15 @@ dev: ## 개발 모드: 백엔드 :8100 + 프론트 :3100 (Ctrl+C로 둘 다 종�
 
 serve: ## 프론트 빌드 후 백엔드 하나로 서빙 (http://localhost:8100)
 	@scripts/serve.sh
+
+share: ## 인터넷에 열기: 로그인 필수 서버 + Cloudflare 터널 (내 도메인 설정이 없으면 임시 주소)
+	@scripts/share.sh
+
+tunnel-setup: ## 내 도메인 고정 주소 만들기 (HOST=invest.example.com, 먼저 cloudflared tunnel login)
+	@scripts/tunnel-setup.sh "$(HOST)"
+
+admin-password: ## 관리자 비밀번호 정하기 (.env 에 해시로)
+	@cd backend && uv run python -m app.auth.passwd
 
 test: ## 비밀값 검사 + pytest + 프론트 린트·타입체크·빌드
 	@scripts/test.sh
