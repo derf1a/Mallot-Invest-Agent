@@ -296,7 +296,8 @@ export interface Agent {
   name?: string
   full_name?: string
   country?: string
-  /** 프로필 포켓몬 (전국도감 번호) */
+  /** 프로필 포켓몬 (전국도감 번호) — 서버가 안 보내면 people.ts 의 기본 번호 */
+  pokemon?: number | null
   persona: string
   tools: string[]
   executor: boolean

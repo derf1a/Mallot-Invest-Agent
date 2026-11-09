@@ -162,7 +162,7 @@ MLX 와 vLLM 은 같은 루프([app/llm/loop.py](backend/app/llm/loop.py))를 �
 - `.gitignore`: `data/`(DB · 실행 산출물 · 모델), `.env*`, 키 파일, DB 파일
 - `scripts/check-secrets.sh`: 커밋 훅(`make hooks`)과 CI 에서 DB · `.env` · 키 모양 값이 섞이면 막는다
 - 테스트는 가짜 토스 계좌(`tests/fake_broker.py`)와 가짜 LLM 으로 돈다 — 실제 주문 · LLM 호출 없음
-- 프로필 그림은 직접 그린 SVG 캐릭터 (Mallot 의 포켓몬 일러스트는 옮기지 않았다)
+- 프로필 그림은 원래 Mallot 처럼 포켓몬 공식 일러스트를 PokeAPI 공개 스프라이트 주소에서 그때그때 불러온다. 저장소에는 그림 파일이 없고 전국도감 번호만 있다. 불러오지 못하면(오프라인 등) 직접 그린 SVG 캐릭터로 바꿔 보여 준다
 
 ## 개발
 

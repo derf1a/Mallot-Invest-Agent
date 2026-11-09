@@ -1,6 +1,6 @@
 /**
- * 에이전트 사람 — 다국적 이름·직함과 프로필 그림 정보(그림은 Face.tsx 의 직접 그린 캐릭터).
- * 직접 만든 에이전트는 키로 고정해서 생김새를 고른다.
+ * 에이전트 사람 — 다국적 이름·직함과 프로필 그림 정보(그림은 Face.tsx). 프로필은 포켓몬(전국도감 번호 → PokeAPI 공개 스프라이트,
+ * 저장소에는 그림을 넣지 않는다), 불러오지 못하면(오프라인 등) 직접 그린 캐릭터. 직접 만든 에이전트는 키로 고정해서 고른다.
  */
 import type { Agent, DeskTeam } from '../api'
 
@@ -23,8 +23,26 @@ export interface Person {
   name?: string | null
   full_name?: string | null
   country?: string | null
+  /** 프로필 포켓몬 (전국도감 번호) — 없으면 키로 고른다 */
+  pokemon?: number | null
   executor?: boolean
 }
+
+// 원래 Mallot 명단과 같은 번호 (비서 · 자문 · 시스템은 서버가 보내는 번호를 쓴다)
+const POKEMON: Record<string, number> = {
+  technical: 65, value: 143, news: 279, growth: 6, portfolio: 52, risk: 213, trader: 25, assistant: 113,
+  strategist: 164, sector: 18, scout: 58,  // 운용 데스크 리서치 담당
+  advisor: 282,                             // 자문 에이전트
+}
+const POKEMON_POOL = [1, 4, 7, 133, 39, 54, 94, 131, 196, 448, 658, 778]
+
+export function pokemonOf(p: Person): number {
+  return p.pokemon || POKEMON[p.key] || POKEMON_POOL[hash(p.key) % POKEMON_POOL.length]
+}
+
+/** PokeAPI 공개 스프라이트 저장소의 공식 일러스트 */
+export const spriteUrl = (id: number) =>
+  `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${id}.png`
 
 const LOOKS: Record<string, Look> = {
   technical: { bg: '#dbe8ff', skin: '#f1c9a5', hair: '#1f1f24', style: 'side', shirt: '#3b6fd8', extra: 'glasses' },   // 켄지
@@ -72,6 +90,6 @@ export function withNames<T extends Person>(people: T[], roster: Agent[] = []): 
   return people.map((p) => {
     if (p.name) return p
     const r = roster.find((x) => x.key === p.key)
-    return r ? { ...p, name: r.name, full_name: r.full_name, country: r.country } : p
+    return r ? { ...p, name: r.name, full_name: r.full_name, country: r.country, pokemon: p.pokemon ?? r.pokemon } : p
   })
 }
