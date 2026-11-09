@@ -2,8 +2,8 @@
  * 에이전트 캐릭터 프로필 그림(SVG)과 이름 줄. 그림은 배경 + 어깨(옷) + 얼굴 + 머리 모양 + 눈·웃는 입 + 소품(안경·헤드셋·넥타이·귀걸이)으로,
  * 20~40px 에서도 알아보게 단순하게. 모습·이름 정보는 people.ts.
  */
-import type { ReactNode } from 'react'
-import { lookOf, nameOf, type Look, type Person } from './people'
+import { useState, type ReactNode } from 'react'
+import { lookOf, nameOf, pokemonOf, spriteUrl, type Look, type Person } from './people'
 
 const INK = '#2b2522'
 
@@ -100,6 +100,14 @@ export function Face({ agentKey }: { agentKey: string }) {
   )
 }
 
+/** 프로필 그림 — 포켓몬 공식 일러스트, 불러오지 못하면 직접 그린 캐릭터 */
+function Picture({ p }: { p: Person }) {
+  const id = pokemonOf(p)
+  const [failed, setFailed] = useState<number | null>(null)
+  if (failed === id) return <Face agentKey={p.key} />
+  return <img src={spriteUrl(id)} alt="" loading="lazy" draggable={false} onError={() => setFailed(id)} />
+}
+
 /** 프로필 그림 칸 — 채팅 말풍선 옆 40px 기본, className 으로 크기 바꿈. title 은 마우스를 올리면 보이는 이름·직함·국적 */
 export function AgentAvatar({ p, className = '', label = true, children }: { p: Person; className?: string; label?: boolean; children?: ReactNode }) {
   const tip = [p.name && p.full_name && p.full_name !== p.name ? `${p.name} (${p.full_name})` : nameOf(p), p.title, p.country]
@@ -107,7 +115,7 @@ export function AgentAvatar({ p, className = '', label = true, children }: { p: 
   return (
     <span className={`msg-avatar face${p.executor ? ' executor' : ''}${className ? ` ${className}` : ''}`} title={label ? tip : undefined}
       style={{ background: lookOf(p.key).bg }} aria-hidden>
-      <Face agentKey={p.key} />
+      <Picture p={p} />
       {children}
     </span>
   )
