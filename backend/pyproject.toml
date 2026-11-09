@@ -11,6 +11,14 @@ dependencies = [
     "uvicorn[standard]>=0.54.0",
 ]
 
+[project.optional-dependencies]
+langsmith = [
+    "langsmith>=0.14.17",
+]
+langgraph = [
+    "langgraph>=1.2.20",
+]
+
 [dependency-groups]
 dev = [
     "httpx2>=2.13.1",
