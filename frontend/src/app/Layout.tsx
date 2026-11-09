@@ -3,7 +3,7 @@ import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { systemApi } from '../features/settings/api'
 import { useLoad } from '../shared/useLoad'
 import BrandMark from './BrandMark'
-import { AiIcon, InvestIcon, PortfolioIcon, SettingsIcon, TeamIcon } from './NavIcons'
+import { AgentsIcon, AiIcon, GraphIcon, InvestIcon, PortfolioIcon, SettingsIcon, TeamIcon, TraceIcon } from './NavIcons'
 
 interface NavItem {
   to: string
@@ -25,6 +25,14 @@ const SECTIONS: NavSection[] = [
       { to: '/invest', label: 'Market', icon: <InvestIcon /> },
       { to: '/invest/portfolio', label: 'Portfolio', icon: <PortfolioIcon /> },
       { to: '/invest/team', label: 'Team', icon: <TeamIcon /> },
+    ],
+  },
+  {
+    title: 'Observe',
+    items: [
+      { to: '/observe/agents', label: 'Agents', icon: <AgentsIcon /> },
+      { to: '/observe/graph', label: 'Graph', icon: <GraphIcon /> },
+      { to: '/observe/traces', label: 'Traces', icon: <TraceIcon /> },
     ],
   },
 ]
