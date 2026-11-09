@@ -24,6 +24,8 @@ core  ←  llm  ←  runs  ←  invest (broker · marketdata · analysis  ←  d
 | `app/invest/api*.py` · `jobs/` · `service.py` | 라우터 · 작업(agent_action · desk_research · news_report) · 20초마다 일정 확인 스레드 |
 | `app/graph` | 에이전트 카탈로그(`catalog.py`), 흐름 그래프(`topology.py`), 관찰 그래프(`observed.py`), LangGraph 내보내기 |
 | `app/tracing` | 트레이스 목록 · 상세 · 에이전트별 통계 API, LangSmith 내보내기(`langsmith.py`, `service.py`) |
+| `app/auth` | 관리자 비밀번호(scrypt) · 서명 쿠키 · 손님 공유 키(`security.py`), 요청마다 역할을 검사하는 미들웨어(`guard.py`), 비밀번호 정하기(`passwd.py`) — [share.md](share.md) |
+| `app/share` | 손님 화면 데이터(`views.py`) — 자동 운용 상태 · 오늘 리서치 · 보고서 · 회의 대화를 읽기만, 운용 지시 글 · 설정은 빼고 |
 
 새 기능 패키지는 `app/<이름>/` 에 `api.py`(라우터) · `jobs/`(작업) · `service.py`(start/stop) 를 두면 `app/registry.py` 가 자동으로 붙인다.
 
@@ -77,6 +79,10 @@ sequenceDiagram
 | `/api/llm` | 기본 LLM · 로컬 MLX 모델 · 경로(`/routes`, `/routes/resolve`) · vLLM(`/vllm`) |
 | `/api/graph` | 에이전트 카탈로그 · 흐름 · 관찰 그래프 · LangGraph 내보내기 |
 | `/api/traces` | 트레이스 목록 · 상세 · 에이전트별 통계 · LangSmith 상태 |
+| `/api/auth` | 내 역할 · 관리자 로그인 · 로그아웃 · 손님 입장 · 공유 링크 켜기 · 끄기 · 새 키 |
+| `/api/share` | 손님 화면 — 운용 상태 · 지금 보고서 · 지난 보고서 · 회의 목록 · 회의 대화 (손님 · 관리자) |
 | `/api/health` | 살아 있는지 · DB 스키마 버전 |
+
+로그인이 켜져 있으면(관리자 비밀번호가 있거나 `MIA_PUBLIC=1`) `/api/share/*` 는 손님 · 관리자, 로그인 · 입장 · 상태 확인은 누구나, 나머지는 관리자만 연다 (`app/auth/guard.py`).
 
 서버를 띄운 뒤 `http://localhost:8100/docs` 에서 전체 OpenAPI 를 볼 수 있다.
