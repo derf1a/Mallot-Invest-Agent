@@ -6,6 +6,7 @@ from datetime import datetime
 import pytest
 
 from app import registry
+from app.core import envfile
 from app.core.db import connect
 from app.invest import service
 from app.invest.broker import config
@@ -219,7 +220,8 @@ def test_config_validation(conn):
 def test_autopilot_api_pin_and_intents(client, broker):
     s = client.get("/api/invest/autopilot").json()
     assert s["config"] == autopilot.DEFAULT_CONFIG and s["intents"] == [] and s["next"] is None
-    assert client.put("/api/invest/autopilot", json={"enabled": True}).status_code == 403          # PIN 필요
+    assert client.put("/api/invest/autopilot", json={"enabled": True, "slots": ["09:20"]}).status_code == 403  # 시각은 PIN
+    assert not autopilot.switch_on()                                                                      # 막히면 스위치도 그대로
     s = client.put("/api/invest/autopilot", json={"enabled": True, "slots": ["09:20", "13:00", "15:05"]}, headers=PIN).json()
     assert s["config"]["enabled"] and s["config"]["slots"] == ["09:20", "13:00", "15:05"]
     assert client.post("/api/invest/autopilot/intents", json={"text": "반도체 주목"}).status_code == 403
@@ -236,6 +238,23 @@ def test_autopilot_api_pin_and_intents(client, broker):
 def test_enable_needs_toss_keys(client):
     r = client.put("/api/invest/autopilot", json={"enabled": True}, headers=PIN)
     assert r.status_code == 409 and "토스" in r.json()["detail"]
+
+
+def test_switch_lives_in_env_without_pin(client, conn, broker):
+    """켜기·끄기는 PIN 없이 .env 의 MIA_AUTOPILOT 을 고치고, .env 를 손으로 고쳐도 서버를 다시 켜지 않고 따른다."""
+    env = envfile.env_path()
+    s = client.put("/api/invest/autopilot", json={"enabled": True}).json()                 # PIN 없이 켜기
+    assert s["config"]["enabled"] and "MIA_AUTOPILOT=1" in env.read_text()
+    assert "enabled" not in autopilot._get(conn, autopilot.S_CONFIG, {})                   # DB 에는 남기지 않는다
+    env.write_text(env.read_text().replace("MIA_AUTOPILOT=1", "MIA_AUTOPILOT=0"))           # 손으로 끄기
+    assert client.get("/api/invest/autopilot").json()["config"]["enabled"] is False
+    env.write_text(env.read_text().replace("MIA_AUTOPILOT=0", "MIA_AUTOPILOT=true"))
+    assert autopilot.get_config(conn)["enabled"]
+    assert client.put("/api/invest/autopilot", json={"enabled": False}).json()["config"]["enabled"] is False
+    assert "MIA_AUTOPILOT=0" in env.read_text()
+    autopilot._put(conn, autopilot.S_CONFIG, {"enabled": True})                             # 예전 DB 값은 보지 않는다
+    assert autopilot.get_config(conn)["enabled"] is False
+    assert client.put("/api/invest/autopilot", json={"mode": "meetings"}).status_code == 403  # 방식 바꾸기는 그대로 PIN
 
 
 # ---- 세션 ----

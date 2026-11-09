@@ -249,12 +249,10 @@ def read_autopilot(conn: Conn) -> dict:
 
 @router.put("/autopilot")
 def save_autopilot(body: AutopilotIn, conn: Conn, pin: Pin = None) -> dict:
-    """켜기·시각 바꾸기는 주문 PIN(승인 없이 실계좌 주문을 내게 되므로), 끄기만 하는 것은 PIN 없이."""
-    only_off = (body.enabled is False and body.slots is None and body.max_extra is None and body.flexible is None
-                and body.mode is None)
-    if not only_off:
-        if body.enabled and not config.toss_configured():
-            raise HTTPException(409, "토스증권 API 키가 없어 자동 운용을 켤 수 없습니다 — 설정 > 투자에서 입력하세요")
+    """켜기·끄기는 PIN 없이 .env 의 MIA_AUTOPILOT 을 고친다. 시각·방식 바꾸기는 주문 PIN."""
+    if body.enabled and not config.toss_configured():
+        raise HTTPException(409, "토스증권 API 키가 없어 자동 운용을 켤 수 없습니다 — 설정 > 투자에서 입력하세요")
+    if any(v is not None for v in (body.slots, body.max_extra, body.flexible, body.mode)):
         require_pin(pin)
     try:
         autopilot.save_config(conn, enabled=body.enabled, slots=body.slots, max_extra=body.max_extra, flexible=body.flexible,

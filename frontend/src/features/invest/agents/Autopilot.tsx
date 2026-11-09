@@ -2,7 +2,7 @@
  * 자동 운용 서랍 (AI Trading 머리글 '자동 운용') — 켜기/끄기, 운용 프로세스(리서치 → 투자위원회 → 집행 → 리스크 감시, 지금 리서치),
  * 오늘 판단 일정(고정·AI 추가·AI 가 옮김·수시 회의, 상태·안건), 지금 판단,
  * 운용 지시(채팅으로 남긴 의도: 섹터 주목·공격적으로·특정 종목), 고정 시각·AI 추가 횟수·필요할 때만 회의, 후보 미리 보기.
- * 켜기·시각·운용 지시·지금 판단은 주문 PIN(서버가 요구하면 한 번 묻는다), 끄기는 PIN 없이.
+ * 켜기·끄기는 PIN 없이 .env 의 MIA_AUTOPILOT 을 고친다. 시각·방식·운용 지시·지금 판단은 주문 PIN(서버가 요구하면 한 번 묻는다).
  */
 import { useState, type ReactNode } from 'react'
 import { investApi, type AdviceStatus, type Agent, type AutopilotEntry, type AutopilotStatus, type MorningBriefing, type ScopePreview } from '../api'
@@ -76,6 +76,7 @@ export default function Autopilot({ status, roster, advice, onAdviceStarted, onC
           ? <>켜면 리서치 담당이 장 전에 시장·섹터·종목을 훑고, 장이 열려 있는 동안 상시 운용 채널에서 에이전트들이 계속 이야기해요. 종목마다 최근 입장의 과반이 같은 방향이고 반대가 20% 이하면 트레이더가 언제든 </>
           : <>켜면 리서치 담당이 장 전에 시장·섹터·종목을 훑고, 정해진 시각에 {c.flexible ? '새 안건이 있으면' : '언제나'} 투자위원회(에이전트 토론)가 열려요. 종목마다 과반이 같은 방향이고 반대가 20% 이하면 트레이더가 </>}
         <b className="warn-text">승인 없이</b> 토스증권 실계좌로 주문해요. 건당·하루 한도, 종목 비중, 전체 주문 중지는 그대로 지켜요.
+        {' '}켜짐 · 꺼짐은 <code>.env</code> 의 <code>MIA_AUTOPILOT</code> 에 저장돼요 (파일을 고쳐도 20초 안에 따라요).
       </p>
       <div className="mode-pick" role="radiogroup" aria-label="운용 방식">
         {MODES.map((m) => (

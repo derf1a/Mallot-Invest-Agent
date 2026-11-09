@@ -7,7 +7,9 @@
   후보 = 운용 지시에 나온 종목 → 보유 → 운용 지시의 섹터(scopes.py), 운용 지시는 관리자 메시지로 들어가고, 게이트는 supermajority
   (과반 + 반대 극소수), 주문은 auto_submit. GRACE_MIN 분 넘게 늦은 일정(서버가 꺼져 있었음)은 '놓침'으로 남기고 건너뛴다.
   다른 토론이 진행 중이면 다음 확인 때 다시 본다.
-- 안전: 켜기·시각 바꾸기·운용 지시·지금 실행은 주문 PIN, 끄기는 PIN 없이(더 안전해지는 쪽). 전체 주문 중지나 주문 조건(토스 키·PIN)이
+- 켜기·끄기: .env 의 MIA_AUTOPILOT(1 켜짐 · 0 꺼짐) 하나가 정한다. 확인할 때마다 .env 파일을 다시 읽어서 손으로 고쳐도 다음 확인
+  (20초) 때 바로 따른다. 화면·비서가 켜고 끄면 그 줄을 고친다 — PIN 은 묻지 않는다.
+- 안전: 시각 바꾸기·운용 방식·운용 지시·지금 실행은 주문 PIN. 전체 주문 중지나 주문 조건(토스 키·PIN)이
   안 맞으면 건너뛰고 기록한다. 주문은 trading.place_order 가 한도(건당·하루·종목 비중)·잔고를 그대로 다시 검사한다.
 - 다음 판단 시각: 세션이 끝나면 작은 LLM 호출(plan_next)이 오늘 일정·장 시각·게이트·결정·운용 지시를 보고 하나를 더하거나(add)
   다음 고정 시각을 옮기거나(move) 그대로 둔다(none). 코드가 장 시간·LEAD_MIN 분 뒤부터·다른 판단과 MIN_GAP_MIN 분 간격·
@@ -23,12 +25,14 @@
 """
 
 import json
+import os
 import re
 import sqlite3
 import threading
 from collections.abc import Awaitable, Callable
 from datetime import date, datetime
 
+from app.core import envfile
 from app.invest.analysis import policy
 from app.invest.broker import config
 from app.invest.broker.toss import TossError
@@ -38,6 +42,8 @@ from app.llm.client import structured
 from app.llm.routes import as_agent
 from app.runs.runner import run_dict, start_run
 
+SWITCH_ENV = "MIA_AUTOPILOT"  # 켜기·끄기는 .env 에서 (switch_on)
+SWITCH_ON = {"1", "true", "yes", "on"}
 S_CONFIG = "invest_autopilot"
 S_INTENTS = "invest_autopilot_intents"
 S_PLAN = "invest_autopilot_plan"
@@ -91,11 +97,25 @@ def _hhmm(minutes: int) -> str:
     return f"{minutes // 60:02d}:{minutes % 60:02d}"
 
 
+def switch_on() -> bool:
+    """자동 운용 스위치 — .env 파일의 SWITCH_ENV 를 부를 때마다 읽는다 (서버를 다시 켜지 않아도). 파일에 없으면 환경 변수, 둘 다 없으면 꺼짐."""
+    raw = envfile.read().get(SWITCH_ENV)
+    if raw is None:
+        raw = os.environ.get(SWITCH_ENV, "")
+    return raw.strip().lower() in SWITCH_ON
+
+
+def set_switch(on: bool) -> None:
+    """.env 의 스위치 줄을 고친다 (없으면 더한다). 다른 줄은 그대로."""
+    envfile.update({SWITCH_ENV: "1" if on else "0"})
+
+
 def get_config(conn: sqlite3.Connection) -> dict:
+    """enabled 는 .env 스위치, 나머지(시각 · 방식 …)는 DB. DB 에 예전 enabled 가 남아 있어도 보지 않는다."""
     raw = _get(conn, S_CONFIG, {})
     out = dict(DEFAULT_CONFIG)
+    out["enabled"] = switch_on()
     if isinstance(raw, dict):
-        out["enabled"] = bool(raw.get("enabled", False))
         slots = [s for s in raw.get("slots") or [] if isinstance(s, str) and _HHMM.match(s)]
         out["slots"] = sorted(set(slots)) or out["slots"]
         try:
@@ -124,15 +144,16 @@ def save_config(conn: sqlite3.Connection, *, enabled: bool | None = None, slots:
         if not 0 <= max_extra <= MAX_EXTRA:
             raise AutopilotError(f"AI 가 더할 수 있는 횟수는 0~{MAX_EXTRA}번입니다")
         cfg["max_extra"] = max_extra
-    if enabled is not None:
-        cfg["enabled"] = enabled
     if flexible is not None:
         cfg["flexible"] = flexible
     if mode is not None:
         if mode not in MODES:
             raise AutopilotError(f"운용 방식은 {', '.join(MODES)} 중 하나예요")
         cfg["mode"] = mode
-    _put(conn, S_CONFIG, cfg)
+    _put(conn, S_CONFIG, {k: v for k, v in cfg.items() if k != "enabled"})
+    if enabled is not None:  # 다른 값이 모두 맞을 때만 스위치를 바꾼다
+        set_switch(enabled)
+        cfg["enabled"] = enabled
     return cfg
 
 
