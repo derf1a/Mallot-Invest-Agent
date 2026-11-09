@@ -1,0 +1,47 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  secrets:
+    name: secret guard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: scripts/check-secrets.sh
+
+  backend:
+    name: backend (pytest)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      # 선택 설치(langsmith · langgraph)까지 넣어 내보내기 · 그래프 테스트도 돈다. mlx-lm 은 macOS 전용이라 리눅스에서는 빠진다.
+      - run: uv sync --all-extras --frozen
+      - run: uv run pytest -q
+
+  frontend:
+    name: frontend (lint · typecheck · build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
