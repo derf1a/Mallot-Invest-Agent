@@ -64,3 +64,20 @@ def test_agent_route_sends_the_call_to_vllm(client, monkeypatch):
     assert asyncio.run(llm.structured("agent_action", "hi", {"type": "object"})) == {"answer": 1}  # 다른 에이전트는 Claude
     assert [r["provider"] for r in usage_rows()] == ["vllm", "claude-agent-sdk"]
     assert bodies[0]["model"] == "qwen-32b"
+
+
+def test_routes_api(client, monkeypatch):
+    view = client.get("/api/llm/routes").json()
+    assert view["effective_default"]["provider"] == "claude" and {p["key"] for p in view["providers"]} == {"claude", "mlx", "vllm"}
+    assert {f["key"] for f in view["feature_list"]} >= {"agent_action", "invest_assistant"}
+    r = client.put("/api/llm/routes", json={"agents": {"risk": "vllm:qwen"}, "features": {"news_report": "mlx"}})
+    assert r.status_code == 200 and r.json()["agents"] == {"risk": "vllm:qwen"}
+    assert client.put("/api/llm/routes", json={"default": "gpt-4"}).status_code == 400
+    got = client.get("/api/llm/routes/resolve", params={"feature": "agent_action", "agent": "risk"}).json()
+    assert (got["provider"], got["model"], got["source"]) == ("vllm", "qwen", "agent")
+    assert client.get("/api/llm/routes/resolve", params={"feature": "news_report"}).json()["source"] == "feature"
+    # vLLM 주소는 .env 로만 — 화면에서는 모델 이름만
+    monkeypatch.delenv("MIA_VLLM_URL", raising=False)
+    assert client.get("/api/llm/vllm").json()["configured"] is False
+    assert client.put("/api/llm/vllm", json={"model": "qwen-32b"}).json()["model"] == "qwen-32b"
+    assert client.post("/api/llm/vllm/test").status_code == 502
