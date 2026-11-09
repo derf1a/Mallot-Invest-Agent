@@ -1,0 +1,31 @@
+/* ---------- mobile: 사이드바 숨기고 좌상단 메뉴 ---------- */
+@media (max-width: 768px) {
+  .topbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    position: sticky;
+    top: 0;
+    height: calc(var(--topbar-height) + env(safe-area-inset-top));
+    padding: env(safe-area-inset-top) 8px 0;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+    z-index: 10;
+  }
+  .menu-button { width: 44px; height: 44px; border: none; background: none; font-size: 1.4rem; padding: 0; }
+  .topbar-title { font-weight: 600; }
+  .sidebar { transform: translateX(-100%); transition: transform 0.2s ease; box-shadow: 2px 0 12px rgb(0 0 0 / 0.15); }
+  .sidebar.open { transform: translateX(0); }
+  .backdrop { display: block; position: fixed; inset: 0; background: rgb(0 0 0 / 0.35); z-index: 15; }
+  .content { margin-left: 0; padding: 16px; }
+  .page > h1, .page-header h1 { display: none; }
+  .page-header { justify-content: center; }
+  .stat-row { gap: 16px; }
+  .toolbar .segmented { margin-left: 0; }
+  .draft-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .cal-cell { min-height: 52px; font-size: 0.7rem; }
+  .modal-backdrop { align-items: flex-end; padding: 0; }
+  .icon-grid { grid-template-columns: repeat(7, 36px); }
+  .modal { width: 100%; border-radius: var(--radius) var(--radius) 0 0; max-height: 92dvh; padding-bottom: calc(16px + env(safe-area-inset-bottom)); }
+  .modal.wide { width: 100%; }
+}

@@ -1,0 +1,71 @@
+/* 여러 화면이 같이 쓰는 조각: 카드·알림·숫자 줄·막대·칩·배지·툴바·세그먼트 */
+
+.page { display: flex; flex-direction: column; gap: 16px; }
+.page-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
+.span-2 { grid-column: 1 / -1; }
+.card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; }
+.card-link { margin-left: auto; font-size: 0.85rem; font-weight: 400; color: var(--accent); text-decoration: none; }
+
+.period-nav { display: flex; align-items: center; gap: 4px; }
+.period-nav button { padding: 4px 12px; font-size: 1.1rem; }
+.period-nav span { min-width: 110px; text-align: center; font-weight: 600; }
+.period-nav .period-label { position: relative; min-width: 130px; font-weight: 600; font-size: 0.95rem; }
+.period-month-input { position: absolute; inset: 0; opacity: 0; pointer-events: none; }
+
+.alert { display: block; padding: 10px 14px; border-radius: 8px; text-decoration: none; color: var(--text); }
+.alert.warn { background: var(--warn-soft); }
+.alert.danger { background: var(--danger-soft); }
+.alert.info { background: var(--info-soft); }
+
+.stat-row { display: flex; gap: 24px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+.stat-row > div { display: flex; flex-direction: column; gap: 2px; }
+.stat-row strong { font-size: 1.2rem; }
+.stat-row.compact { margin: 0; }
+.stat-row.compact strong { font-size: 1rem; }
+
+.stack-bar { display: flex; gap: 2px; height: 18px; border-radius: 9px; overflow: hidden; background: var(--surface); }
+.legend { list-style: none; padding: 0; margin: 12px 0 0; display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 0.9rem; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; }
+
+.budget-row { margin-bottom: 12px; }
+.budget-head { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 4px; align-items: center; }
+.bar { position: relative; height: 8px; border-radius: 4px; background: var(--surface); overflow: hidden; }
+/* 오늘까지 써도 되는 위치 (기간이 지난 비율) */
+.bar-pace { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--text); opacity: 0.55; }
+.bar-fill { height: 100%; border-radius: 4px; }
+.bar-fill.ok { background: var(--accent); }
+.bar-fill.saving { background: var(--c-saving); }
+.bar-fill.fixed { background: var(--c-fixed); }
+.bar-fill.variable { background: var(--c-variable); }
+.bar-fill.warn { background: var(--warn); }
+.bar-fill.over { background: var(--neg); }
+
+.chip, .badge { font-size: 0.75rem; padding: 2px 8px; border-radius: 999px; background: var(--surface); white-space: nowrap; }
+.chip.paid { background: var(--accent-soft); color: var(--accent); }
+.chip.upcoming { background: var(--info-soft); color: var(--info); }
+.chip.missed { background: var(--danger-soft); color: var(--neg); font-weight: 600; }
+.chip.unset { color: var(--muted); }
+.chip.skipped { background: var(--surface); color: var(--muted); }
+.rrow.skipped { opacity: 0.6; }
+.skip-button { align-self: center; margin-right: 10px; padding: 4px 10px; font-size: 0.8rem; border-radius: 999px; white-space: nowrap; }
+.skip-button.undo { color: var(--muted); }
+.chip.floating { background: var(--surface); color: var(--muted); border: 1px dashed var(--border); }
+.badge.warn { background: var(--warn-soft); color: var(--warn); }
+.badge.info { background: var(--info-soft); color: var(--info); }
+.badge.source-rule { background: var(--accent-soft); color: var(--accent); }
+.badge.source-import { background: var(--info-soft); color: var(--info); }
+.badge.source-llm { background: color-mix(in srgb, var(--c-variable) 14%, transparent); color: var(--c-variable); }
+.chip-button { font-size: 0.85rem; padding: 4px 10px; border-radius: 999px; background: var(--warn-soft); color: var(--warn); border-color: transparent; }
+.chip-button.on { outline: 2px solid var(--warn); }
+
+.toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.toolbar .segmented { margin-left: auto; }
+.segmented { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.segmented button { border: none; border-radius: 0; background: var(--card); }
+.segmented button.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.segmented.small button { padding: 6px 12px; }
+
+/* 배지 줄 (Mallot ledger.css 에서) */
+.badges { display: flex; gap: 4px; flex-wrap: wrap; }
+.badges:empty { display: none; }

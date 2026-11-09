@@ -1,0 +1,142 @@
+/* 디자인 토큰(색·글꼴·간격, 라이트/다크)과 기본 요소 */
+
+:root {
+  --bg: #ffffff;
+  --surface: #f5f7f6;
+  --card: #ffffff;
+  --text: #1c2321;
+  --muted: #66706d;
+  --border: #e1e6e4;
+  --accent: #1f6f5c;
+  --accent-soft: #e3f1ec;
+  --pos: #1a7f4b;
+  --neg: #c2362f;
+  --warn: #b26a00;
+  --warn-soft: #fff4e0;
+  --danger-soft: #fdecea;
+  --info-soft: #e8f0fe;
+  --info: #2457c5;
+  /* 돈의 성격별 숫자 색: 정기·저금 / 정기·지출 / 변동비 (수입은 --pos) */
+  --c-saving: #2463c9;
+  --c-fixed: #c25e0f;
+  --c-variable: #7048c4;
+  /* 차트 계열 색 (dataviz 기본 팔레트 1~3번, validate_palette.js 라이트/다크 통과) */
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --series-4: #eda100;
+  --series-5: #e87ba4;
+  --series-other: #898781; /* 접은 '기타' */
+  --scroll-thumb: color-mix(in srgb, var(--muted) 38%, transparent);
+  --scroll-thumb-hover: color-mix(in srgb, var(--muted) 62%, transparent);
+  /* 주가 등락 (국내 관례: 상승 빨강, 하락 파랑) */
+  --up: #d0312d;
+  --down: #2563d9;
+  --up-soft: #fdeceb;
+  --down-soft: #e8effc;
+  /* AI Trading 채팅방 (카카오톡처럼 푸른 회색 바탕 · 흰 말풍선 · 내 말풍선 노랑) */
+  --chat-bg: #bfd0df;
+  --chat-name: #36434e;
+  --chat-time: #47545f;
+  --chat-pill: rgb(40 52 64 / 0.6);
+  --chat-pill-text: #ffffff;
+  --chat-action: rgb(255 255 255 / 0.6);
+  --chat-card: #ffffff;
+  --bubble: #ffffff;
+  --bubble-mine: #fee500;
+  --bubble-mine-text: #191919;
+  --sidebar-width: 220px;
+  --topbar-height: 52px;
+  --radius: 12px;
+  /* 글꼴: 본문은 Pretendard, 제목·숫자는 Space Grotesk, 브랜드는 Instrument Serif, 시스템 정보는 JetBrains Mono */
+  --font-body: 'Pretendard Variable', Pretendard, system-ui, -apple-system, 'Apple SD Gothic Neo', sans-serif;
+  --font-display: 'Space Grotesk Variable', 'Pretendard Variable', Pretendard, system-ui, sans-serif;
+  --font-serif: 'Instrument Serif', 'Times New Roman', serif;
+  --font-mono: 'JetBrains Mono Variable', ui-monospace, SFMono-Regular, monospace;
+  font-family: var(--font-body);
+  font-feature-settings: 'ss06';
+  color: var(--text);
+  background: var(--bg);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #121615;
+    --surface: #1b211f;
+    --card: #181d1b;
+    --text: #e6ebe9;
+    --muted: #94a09c;
+    --border: #2a3230;
+    --accent: #5cc2a3;
+    --accent-soft: #1e3a32;
+    --pos: #5cc28a;
+    --neg: #ef7a72;
+    --warn: #f0b85a;
+    --warn-soft: #3a2e17;
+    --danger-soft: #3d1f1d;
+    --info-soft: #1d2a45;
+    --info: #8fb0f5;
+    --c-saving: #7fb0ff;
+    --c-fixed: #f2a35e;
+    --c-variable: #b49cf5;
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --series-3: #199e70;
+    --series-4: #c98500;
+    --series-5: #d55181;
+    --up: #ff6b63;
+    --down: #6aa1ff;
+    --up-soft: #3d1f1d;
+    --down-soft: #1d2a45;
+    --chat-bg: #1b2228;
+    --chat-name: #b7c1c9;
+    --chat-time: #8f9ba5;
+    --chat-pill: rgb(255 255 255 / 0.1);
+    --chat-pill-text: #d6dde2;
+    --chat-action: rgb(255 255 255 / 0.08);
+    --chat-card: #252d33;
+    --bubble: #2b3339;
+  }
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); }
+h1 { font-family: var(--font-display); font-size: 1.55rem; font-weight: 650; letter-spacing: -0.02em; margin: 0; }
+h2 { font-family: var(--font-display); font-size: 1rem; font-weight: 650; letter-spacing: -0.01em; margin: 0 0 12px; display: flex; align-items: baseline; gap: 6px; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button, .button {
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-block;
+}
+button:disabled { opacity: 0.5; cursor: default; }
+button.primary, .button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.link { border: none; background: none; padding: 0; color: var(--accent); text-decoration: underline; }
+.danger-text { color: var(--neg); }
+a { color: var(--accent); }
+input, select, textarea {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  min-width: 0;
+}
+.muted { color: var(--muted); }
+.small { font-size: 0.85rem; }
+.pos { color: var(--pos); }
+.neg { color: var(--neg); }
+.amt-saving { color: var(--c-saving); }
+.amt-fixed { color: var(--c-fixed); }
+.amt-variable { color: var(--c-variable); }
+.icon { display: inline-block; width: 1.4em; text-align: center; flex-shrink: 0; }
+.kind-tag { font-size: 0.72rem; font-weight: 600; padding: 1px 6px; border-radius: 4px; }
+.kind-tag.saving { color: var(--c-saving); background: color-mix(in srgb, var(--c-saving) 14%, transparent); }
+.kind-tag.expense { color: var(--c-fixed); background: color-mix(in srgb, var(--c-fixed) 14%, transparent); }
+.mono { font-family: var(--font-mono); font-size: 0.85rem; word-break: break-all; }
+.error { color: var(--neg); }
+.warn-text { color: var(--warn); }
+.empty { padding: 24px 0; text-align: center; }

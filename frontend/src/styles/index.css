@@ -1,0 +1,16 @@
+/*
+ * 스타일 입구. 공용(styles/)과 기능별(features/<기능>/*.css) 파일을 여기서 차례로 불러온다.
+ * 순서가 곧 우선순위(뒤에 올수록 이김) — 새 기능의 CSS 는 그 기능 폴더에 두고 맨 아래에 더한다.
+ */
+@import './base.css';
+@import './layout.css';
+@import './components.css';
+@import './forms.css';
+@import './controls.css';
+@import './mobile.css';
+@import './panels.css';
+@import './numbers.css';
+@import '../features/settings/settings.css';
+@import '../features/invest/invest.css';
+@import '../features/invest/portfolio/portfolio.css';
+@import '../features/invest/agents/agents.css';
