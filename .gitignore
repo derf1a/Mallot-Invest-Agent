@@ -1,0 +1,40 @@
+# ── 개인 데이터 · 비밀값 (공개 저장소: 절대 커밋하지 않는다) ──
+# 실행 데이터: DB · 실행 산출물 · 트레이스 · 로컬 모델 · 백업
+data/
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+*.jsonl
+backups/
+exports/
+models/
+# API 키 · 주문 PIN
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+
+# ── 도구 ──
+.claude/settings.local.json
+CLAUDE.local.md
+.DS_Store
+.vscode/
+.idea/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Node
+node_modules/
+frontend/dist/
+*.tsbuildinfo
+*.log
