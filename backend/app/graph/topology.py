@@ -61,16 +61,16 @@ def meeting(conn: sqlite3.Connection) -> dict:
     nodes.append(_n("gate", "게이트", "code", 3, 1.5, "종목마다 만장일치 / 과반", obj=agents.session_gate))
     if ex:
         nodes += [_n(ex["key"], ex["title"], "agent", 4.2, 1.5, ex.get("name", ""), agent=ex["key"]),
-                  _n("tool_check", "place_order 도구", "code", 5.4, 0.6, f"세션당 {agents.MAX_ORDERS}건 · 열린 종목만",
+                  _n("tool_check", "place_order 도구", "code", 5.4, 0.3, f"세션당 {agents.MAX_ORDERS}건 · 열린 종목만",
                      obj=agents._handlers),
-                  _n("trading", "주문 검사", "code", 5.4, 2.0, "한도 · 호가 · 잔고 · 비중", obj=trading.place_order),
-                  _n("approval", "승인 카드", "human", 6.6, 1.3, "승인 생략이 꺼져 있으면")]
+                  _n("trading", "주문 검사", "code", 5.4, 1.5, "한도 · 호가 · 잔고 · 비중", obj=trading.place_order),
+                  _n("approval", "승인 카드", "human", 5.4, 2.7, "승인 생략이 꺼져 있으면")]
         edges += [_e("gate", ex["key"], "열린 종목"), _e(ex["key"], "tool_check", "주문", "order"),
                   _e("tool_check", "trading", "", "order"), _e("trading", "approval", "pending_approval", "order"),
                   _e("approval", "toss_order", "제출", "order")]
-        nodes.append(_n("toss_order", "토스 실계좌 주문", "data", 7.8, 1.3))
-    nodes += [_n("minutes", "회의록", "agent", 4.2, 3.4, "비서가 정리", agent="assistant"),
-              _n("scheduler", "일정 담당", "agent", 5.4, 3.4, "다음 회의 시각 · 안건", agent="scheduler", obj=autopilot.plan_next)]
+        nodes.append(_n("toss_order", "토스 실계좌 주문", "data", 5.4, 3.9))
+    nodes += [_n("minutes", "회의록", "agent", 4.2, 3.0, "비서가 정리", agent="assistant"),
+              _n("scheduler", "일정 담당", "agent", 4.2, 4.2, "다음 회의 시각 · 안건", agent="scheduler", obj=autopilot.plan_next)]
     edges += [_e("gate", "minutes", "끝나면"), _e("minutes", "scheduler", "")]
     used = set().union(*(_sources(a["tools"]) for a in an)) if an else set()
     data = _data_nodes(1.0, max(len(an), 4) * 1.1 + 0.6, used)
@@ -101,8 +101,8 @@ def continuous(conn: sqlite3.Connection) -> dict:
               _e("poll", an[0]["key"] if an else "gate", "다시 묻기", "talk")]
     if ex:
         nodes += [_n(ex["key"], ex["title"], "agent", 5.4, 1.2, ex.get("name", ""), agent=ex["key"]),
-                  _n("trading", "주문 검사", "code", 6.6, 1.2, "한도 · 30분 같은 방향 1건 · 하루 6건", obj=trading.place_order),
-                  _n("toss_order", "토스 실계좌 주문", "data", 7.8, 1.2, "승인 없이 제출")]
+                  _n("trading", "주문 검사", "code", 5.4, 2.6, "한도 · 30분 같은 방향 1건 · 하루 6건", obj=trading.place_order),
+                  _n("toss_order", "토스 실계좌 주문", "data", 5.4, 4.0, "승인 없이 제출")]
         edges += [_e("poll", ex["key"], "최종 판단 통과"), _e(ex["key"], "trading", "주문", "order"),
                   _e("trading", "toss_order", "", "order"), _e(ex["key"], "triggers", "트레이더 제안", "talk")]
     nodes.append(_n("research", "리서치 담당", "agent", 3, 3.6, "'이름: 부탁' 에 답 · 볼 종목 올리기", agent="scout"))
@@ -120,11 +120,11 @@ def research_desk(conn: sqlite3.Connection) -> dict:
              _n("sector", "섹터 애널리스트", "agent", 2.8, 0, "비중 확대 · 축소 섹터", agent="sector"),
              _n("valuation", "가치 스크린", "code", 2.8, 2.4, "PER · PBR · ROE · S-RIM 점수"),
              _n("scout", "종목 발굴 애널리스트", "agent", 4.2, 1.0, "발굴 목록 8개", agent="scout"),
-             _n("ideas", "발굴 목록", "store", 5.6, 1.0, "invest_desk"),
-             _n("portfolio", "포트폴리오 매니저", "agent", 7.0, 0.4, "회의 후보 고르기", agent="portfolio"),
+             _n("ideas", "발굴 목록", "store", 5.6, 1.6, "invest_desk"),
+             _n("portfolio", "포트폴리오 매니저", "agent", 5.6, 0.2, "회의 후보 고르기", agent="portfolio"),
              _n("risk", "리스크 감시", "code", 4.2, 3.0, "보유 −4% · +6%, 발굴 +5% — 10분마다", obj=desk_agents.research),
              _n("alert", "경보 → 수시 회의 · 채널 계기", "store", 5.6, 3.0),
-             _n("meeting", "투자 회의 / 상시 운용", "code", 8.4, 1.6)]
+             _n("meeting", "투자 회의 / 상시 운용", "code", 7.0, 1.6)]
     edges = [_e("toss_market", "strategist", "지수 · 랭킹", "data"), _e("news_rss", "strategist", "시장 뉴스", "data"),
              _e("strategist", "sector", "오늘 시장 분석", "talk"), _e("toss_market", "sector", "섹터 등락표", "data"),
              _e("sector", "scout", "확대 섹터", "talk"), _e("dart", "valuation", "재무", "data"), _e("valuation", "scout", "가치 상위"),
