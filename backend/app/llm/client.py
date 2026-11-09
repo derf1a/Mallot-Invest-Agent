@@ -5,7 +5,7 @@
   Claude Code 기본 도구(셸·파일 등)는 모두 끄고(tools=[]), 다른 MCP 설정도 불러오지 않는다(strict_mcp_config).
 
 연결: Claude Agent SDK (로컬 Claude Code CLI). ANTHROPIC_API_KEY 가 있으면 API 키, 없으면 Claude Code 로그인(구독)을 쓴다.
-     또는 로컬 LLM (mlx-lm, app/llm/local.py·local_run.py). 공급자 고르기:
+     또는 로컬 LLM (mlx-lm, app/llm/local.py·loop.py). 공급자 고르기:
      - model 을 비우면 설정 > LLM 의 기본 LLM, model='local' 이면 로컬, 'claude-…' 면 그 Claude 모델.
      - 이미지가 든 프롬프트(캡쳐 판독)는 로컬 모델이 읽지 못해 언제나 Claude.
 기록: 기능, 공급자, 모델, input/output/캐시 토큰, SDK 가 알려주는 API 요금 환산액, 지연, 턴 수, 성공·실패, 실행(run) id.
@@ -153,9 +153,10 @@ async def structured(
     """구조화 출력(JSON Schema)으로 응답 하나를 받는다. prompt 가 리스트면 이미지 등 content 블록."""
     has_image = isinstance(prompt, list) and any(b.get("type") == "image" for b in prompt)
     if uses_local(model, has_image):
-        from app.llm import local_run
+        from app.llm import local, loop
 
-        return await local_run.structured(feature, prompt, schema, system_prompt=system_prompt, max_turns=max_turns)
+        return await loop.structured(feature, prompt, schema, backend=local.MlxBackend(), system_prompt=system_prompt,
+                                     max_turns=max_turns)
     from claude_agent_sdk import ClaudeAgentOptions
 
     model = default_model(model)
@@ -200,10 +201,10 @@ async def agentic(
 ) -> dict:
     """앱 도구만 쓰는 에이전트 실행 → 구조화 출력. 도구 오류는 에이전트에게 오류 결과로 돌려준다."""
     if uses_local(model):
-        from app.llm import local_run
+        from app.llm import local, loop
 
-        return await local_run.agentic(feature, prompt, schema, tools=tools, system_prompt=system_prompt,
-                                       max_turns=max_turns)
+        return await loop.agentic(feature, prompt, schema, tools=tools, backend=local.MlxBackend(),
+                                  system_prompt=system_prompt, max_turns=max_turns)
     from claude_agent_sdk import ClaudeAgentOptions, ToolAnnotations, create_sdk_mcp_server, tool
 
     sdk_tools = []
