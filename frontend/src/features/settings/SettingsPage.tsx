@@ -3,15 +3,17 @@ import { useSearchParams } from 'react-router-dom'
 import InvestSettings from '../invest/InvestSettings'
 import LlmSettings from './LlmSettings'
 import RoutesSettings from './RoutesSettings'
+import ShareSettings from './ShareSettings'
 
 const TABS = [
   { key: 'invest', label: '투자' },
   { key: 'llm', label: 'LLM' },
+  { key: 'share', label: '공유 · 접근' },
 ] as const
 
 export default function SettingsPage() {
   const [params, setParams] = useSearchParams()
-  const tab = params.get('tab') === 'llm' ? 'llm' : 'invest'
+  const tab = TABS.find((t) => t.key === params.get('tab'))?.key ?? 'invest'
   return (
     <div className="page">
       <h1>Settings</h1>
@@ -23,7 +25,7 @@ export default function SettingsPage() {
           </button>
         ))}
       </div>
-      {tab === 'invest' ? <InvestSettings /> : <><LlmSettings /><RoutesSettings /></>}
+      {tab === 'invest' ? <InvestSettings /> : tab === 'llm' ? <><LlmSettings /><RoutesSettings /></> : <ShareSettings />}
     </div>
   )
 }
