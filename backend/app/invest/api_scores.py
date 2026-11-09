@@ -11,8 +11,9 @@ from fastapi.responses import PlainTextResponse
 
 from app.core.db import get_conn
 from app.invest.analysis import scorelog, valuation
-from app.invest.debate import track
+from app.invest.debate import agents, stream, track
 from app.invest.marketdata import market
+from app.invest.ops import autopilot
 
 router = APIRouter(prefix="/api/invest", tags=["invest"])
 Conn = Annotated[sqlite3.Connection, Depends(get_conn)]
@@ -64,5 +65,11 @@ def valuation_report(symbol: str, conn: Conn) -> dict:
 
 @router.get("/agent-scores")
 def agent_scores(conn: Conn) -> dict:
-    """에이전트별 지난 판단 성적 — 의견 무게의 성과 배수."""
-    return {"scores": track.scores(conn, market.provider(), market.now_kst()), "horizon": track.HORIZON, "benchmark": track.BENCHMARK}
+    """에이전트별 성과(지난 판단 성적 → 성과 배수)와 실제 표의 무게(평균 무게 · 비중 · 주문과 같은 편), 그리고 판단 규칙."""
+    scores = track.scores(conn, market.provider(), market.now_kst())
+    skills = {k: v["skill"] for k, v in scores.items()}
+    return {"scores": scores, "influence": track.influence(conn, skills), "horizon": track.HORIZON, "benchmark": track.BENCHMARK,
+            "rules": {"mode": autopilot.get_config(conn)["mode"], "conviction_unit": track.CONVICTION_UNIT,
+                      "min_skill": track.MIN_SKILL, "max_skill": track.MAX_SKILL, "prior": track.PRIOR, "recent": track.RECENT,
+                      "propose_min": stream.PROPOSE_MIN, "for_min": stream.FOR_MIN, "against_max": stream.AGAINST_MAX,
+                      "max_oppose_share": agents.MAX_OPPOSE_SHARE}}

@@ -381,6 +381,34 @@ def test_track_scores_judge_against_the_market(client, conn, broker, at_open):  
     assert track.weight(0.5) == 1.0 and track.weight(0.9, 1.3) == 2.34 and track.weight(None) == 0
 
 
+def test_track_influence_is_weight_share_and_order_agreement(client, conn):  # noqa: F811
+    """실제 표의 무게 = 확신 ÷ 0.5 × 성과 배수, 비중은 전체 무게 가운데 몫. 나간 에이전트 주문과 같은 편 · 반대편을 센다."""
+    now = at("10:00").replace(year=2026, month=10, day=6)
+    track.record(conn, {"agent": "a", "views": [{"symbol": "AAA", "stance": "buy", "confidence": 0.5},
+                                                {"symbol": "BBB", "stance": "buy", "confidence": 1.0}]}, now, None, {})
+    track.record(conn, {"agent": "b", "views": [{"symbol": "AAA", "stance": "sell", "confidence": 0.5}]}, now, None, {})
+    for status in ("filled", "rejected"):  # 거절된 주문은 '나간 주문'이 아니다
+        conn.execute("INSERT INTO invest_orders (created_at, symbol, side, order_type, quantity, status, source) "
+                     "VALUES ('2026-10-06 10:05:00', ?, 'buy', 'market', 1, ?, 'agent')", ("AAA" if status == "filled" else "BBB", status))
+    conn.commit()
+    got = track.influence(conn, {"a": 1.2})
+    assert got["a"]["views"] == 2 and got["a"]["buy"] == 2 and got["a"]["avg_confidence"] == 0.75
+    assert got["a"]["avg_weight"] == round((1.2 + 2.4) / 2, 3)          # 성과 배수 1.2 를 곱한다
+    assert got["b"]["avg_weight"] == 1.0                                 # 성적이 없으면 배수 1
+    assert got["a"]["share"] == round(3.6 / 4.6, 3) and got["b"]["share"] == round(1.0 / 4.6, 3)
+    assert (got["a"]["with_orders"], got["a"]["against_orders"]) == (1, 0)  # AAA 매수 주문과 같은 편, BBB 는 거절이라 안 셈
+    assert (got["b"]["with_orders"], got["b"]["against_orders"]) == (0, 1)
+    assert track.influence(conn, {}) and track.influence(conn, {})["a"]["avg_weight"] == 1.5
+
+
+def test_agent_scores_api_carries_influence_and_rules(client, conn, broker):  # noqa: F811
+    track.record(conn, {"agent": "risk", "views": [{"symbol": "005930", "stance": "sell", "confidence": 0.8}]}, at("10:00"), None, {})
+    body = client.get("/api/invest/agent-scores").json()
+    skill = body["scores"].get("risk", {}).get("skill", 1.0)                           # 가짜 시세로 채점됐으면 그 배수
+    assert body["influence"]["risk"]["avg_weight"] == track.weight(0.8, skill) and body["influence"]["risk"]["share"] == 1.0
+    assert body["rules"]["for_min"] == stream.FOR_MIN and body["rules"]["conviction_unit"] == 0.5 and body["rules"]["mode"] in ("continuous", "meetings")
+
+
 def test_track_backfills_past_talks_once(client, conn):  # noqa: F811
     import json
     from app.core.db import data_dir
