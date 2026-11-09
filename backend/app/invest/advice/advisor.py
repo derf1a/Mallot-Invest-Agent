@@ -15,7 +15,7 @@ import logging
 import sqlite3
 from collections.abc import Awaitable, Callable
 
-from app.invest import assistant, policy
+from app.invest.advice import assistant, policy
 from app.invest.ops import desk
 from app.invest.debate import agents
 from app.invest.marketdata import market

@@ -3,7 +3,7 @@
 
 import pytest
 
-from app.invest import assistant
+from app.invest.advice import assistant
 from app.invest.ops import autopilot, briefing, desk, desk_agents
 from app.invest.debate import scopes
 from app.invest.analysis import screening

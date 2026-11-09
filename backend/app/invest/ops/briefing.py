@@ -27,7 +27,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from app.core.db import data_dir
-from app.invest import policy
+from app.invest.advice import policy
 from app.invest.ops import autopilot, desk
 from app.invest.marketdata import market, news
 from app.invest.broker import portfolio

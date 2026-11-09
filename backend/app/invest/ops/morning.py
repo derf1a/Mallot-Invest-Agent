@@ -17,7 +17,7 @@ import sqlite3
 from collections.abc import Awaitable, Callable
 from datetime import date, datetime
 
-from app.invest import assistant
+from app.invest.advice import assistant
 from app.invest.ops import briefing
 from app.invest.marketdata import market
 from app.invest.marketdata.market import MarketError

@@ -5,7 +5,7 @@ from datetime import datetime
 
 import pytest
 
-from app.invest import assistant
+from app.invest.advice import assistant
 from app.invest.ops import autopilot
 from app.invest.debate import agents
 from app.invest.marketdata import market
@@ -287,7 +287,7 @@ def test_report_history_and_sector_rates(client, broker, at_open, monkeypatch):
     """수익률 추이: 지나간 보고서(기준 원금 시작일이 같은 것)의 값 + 지금, 지수는 시작 전 종가 대비. 섹터 의견에는 기간 등락."""
     from datetime import timedelta
     from app.core.db import connect
-    from app.invest import policy
+    from app.invest.advice import policy
     from app.invest.ops import briefing, desk
     from app.invest.marketdata import market, news
     from app.invest.marketdata.market import MarketError, SampleMarket

@@ -15,7 +15,7 @@ import sqlite3
 from collections.abc import Iterable
 from concurrent.futures import ThreadPoolExecutor
 
-from app.invest import policy
+from app.invest.advice import policy
 from app.invest.analysis import screening
 from app.invest.broker import config, trading
 from app.invest.marketdata.market import MarketError

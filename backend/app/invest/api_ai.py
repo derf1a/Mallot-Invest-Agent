@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from app.core.db import data_dir, get_conn
-from app.invest import advisor, assistant, policy
+from app.invest.advice import advisor, assistant, policy
 from app.invest.ops import autopilot, briefing, desk, morning
 from app.invest.debate import agents, scopes
 from app.invest.marketdata import market, news

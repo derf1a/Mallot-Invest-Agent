@@ -32,7 +32,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
-from app.invest import assistant, policy
+from app.invest.advice import assistant, policy
 from app.invest.ops import autopilot, desk
 from app.invest.debate import agents, scopes, track
 from app.invest.analysis import exits, screening

@@ -29,7 +29,7 @@ import threading
 from collections.abc import Awaitable, Callable
 from datetime import date, datetime
 
-from app.invest import policy
+from app.invest.advice import policy
 from app.invest.marketdata import market
 from app.invest.broker import config
 from app.invest.marketdata.market import MarketError

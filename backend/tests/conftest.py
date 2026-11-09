@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 @pytest.fixture(autouse=True)
 def runs_sync(monkeypatch):
     """작업을 백그라운드 스레드 대신 즉시 실행한다."""
-    from app.invest import assistant
+    from app.invest.advice import assistant
     from app.runs import runner
 
     monkeypatch.setattr(runner, "SYNC", True)
@@ -16,7 +16,7 @@ def runs_sync(monkeypatch):
 def no_real_llm(monkeypatch):
     """테스트가 실제 LLM·뉴스를 부르지 않게 — 따로 가짜를 넣지 않은 투자 비서·회의록·일정 담당·운용 데스크는 실패로(코드 대체 경로를
     탄다), 뉴스 RSS 는 연결 실패로."""
-    from app.invest import advisor, assistant
+    from app.invest.advice import advisor, assistant
     from app.invest.ops import autopilot, desk_agents, morning
     from app.invest.debate import minutes
     from app.invest.analysis import screening

@@ -35,7 +35,7 @@ import threading
 from collections.abc import Awaitable, Callable
 
 from app.core.db import connect
-from app.invest import policy
+from app.invest.advice import policy
 from app.invest.ops import autopilot, briefing, desk
 from app.invest.debate import agents, scopes
 from app.invest.marketdata import market
@@ -553,7 +553,7 @@ def build_tools(conn: sqlite3.Connection, s: agents.Session, used: list[str], mo
         return {"ok": True, "changed": [f"{d['label']}: {d['before']} → {d['after']}" for d in out["diff"]] or "바뀐 것 없음"}
 
     async def start_advice(a: dict) -> dict:
-        from app.invest import advisor
+        from app.invest.advice import advisor
         topics = [str(t) for t in a["topics"]] if isinstance(a.get("topics"), list) else None
         st = advisor.start(conn, by="assistant", topics=topics, note=str(a.get("note") or ""))
         note("start_advice")
