@@ -25,7 +25,7 @@ export default function InvestSettings() {
   return (
     <div className="invest-settings">
       {message && <p className={message.ok ? 'ok-text small' : 'error small'} role="status">{message.text}</p>}
-      <KeysCard cfg={cfg} run={run} />
+      {cfg.keys && <KeysCard cfg={cfg} keys={cfg.keys} run={run} />}
       <TradingCard cfg={cfg} run={run} />
       <LimitsCard key={JSON.stringify(cfg.limits)} cfg={cfg} run={run} />
     </div>
@@ -34,7 +34,8 @@ export default function InvestSettings() {
 
 type Run = (fn: () => Promise<unknown>, ok: string) => Promise<void>
 
-function KeysCard({ cfg, run }: { cfg: InvestConfig; run: Run }) {
+/** 키 칸 — 관리자만 (손님에게는 서버가 keys 를 보내지 않는다) */
+function KeysCard({ cfg, keys, run }: { cfg: InvestConfig; keys: KeyStatus[]; run: Run }) {
   const [values, setValues] = useState<Record<string, string>>({})
   const [tested, setTested] = useState<Awaited<ReturnType<typeof investApi.testConnection>> | null>(null)
   const [testing, setTesting] = useState(false)
@@ -69,7 +70,7 @@ function KeysCard({ cfg, run }: { cfg: InvestConfig; run: Run }) {
         비워 두면 첫 계좌를 쓰고, 연결 테스트에서 고를 수 있어요(계좌번호를 넣어도 맞는 순번으로 바꿔 써요).
       </p>
       <div className="key-form">
-        {cfg.keys.map((k) => (
+        {keys.map((k) => (
           <label key={k.key} className="field">
             <span>
               {k.label} <span className="muted small mono">{k.key}</span>
@@ -148,8 +149,8 @@ function TradingCard({ cfg, run }: { cfg: InvestConfig; run: Run }) {
           </ul>
           {!cfg.pin_configured && (
             <p className="muted">
-              <code>{cfg.env_file}</code> 에 <code>{cfg.pin_env_name}=숫자4자리이상</code> 을 직접 추가하고 서버를 다시 시작하세요. 이 앱은 로그인이
-              없어서, 같은 네트워크의 다른 기기가 주문을 내지 못하도록 PIN 은 화면에서 바꿀 수 없어요.
+              <code>{cfg.env_file ?? '.env'}</code> 에 <code>{cfg.pin_env_name}=숫자4자리이상</code> 을 직접 추가하고 서버를 다시 시작하세요. 화면 · API 로는
+              PIN 을 정하거나 바꿀 수 없어요 (이 Mac 에서만).
             </p>
           )}
         </div>

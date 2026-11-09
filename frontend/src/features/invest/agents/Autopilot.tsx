@@ -6,6 +6,7 @@
  */
 import { useState, type ReactNode } from 'react'
 import { investApi, type AdviceStatus, type Agent, type AutopilotEntry, type AutopilotStatus, type MorningBriefing, type ScopePreview } from '../api'
+import { useReadOnly } from '../../../shared/readOnly'
 import { useLoad } from '../../../shared/useLoad'
 import { PolicySection } from './Advice'
 import { DeskProcess } from './Desk'
@@ -33,6 +34,7 @@ export default function Autopilot({ status, roster, advice, onAdviceStarted, onC
   onBriefingSent: () => void
   onClose: () => void
 }) {
+  const readOnly = useReadOnly()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [text, setText] = useState('')
@@ -67,7 +69,7 @@ export default function Autopilot({ status, roster, advice, onAdviceStarted, onC
           <b>{c.enabled ? '켜짐' : '꺼짐'}</b>
           {c.enabled && status.next && <span className="muted small">다음 판단 {status.next.time}</span>}
         </div>
-        {c.enabled
+        {readOnly ? <span className="chip">읽기 전용</span> : c.enabled
           ? <button disabled={busy} onClick={() => act(() => investApi.saveAutopilot({ enabled: false }))}>끄기</button>
           : <button className="primary" disabled={busy} onClick={() => act(() => investApi.saveAutopilot({ enabled: true }))}>켜기</button>}
       </section>
@@ -141,13 +143,15 @@ export default function Autopilot({ status, roster, advice, onAdviceStarted, onC
           ))}
           {!status.intents.length && <li className="muted small">예: "반도체 섹터 좀 주목해서" · "공격적으로 해 줘" · "하이닉스 잘 봐 줘"</li>}
         </ul>
-        <form className="pilot-intent-form" onSubmit={async (e) => {
-          e.preventDefault()
-          if (text.trim() && await act(() => investApi.addIntent(text.trim()))) setText('')
-        }}>
-          <input value={text} maxLength={500} placeholder="운용 지시 남기기" aria-label="운용 지시" onChange={(e) => setText(e.target.value)} />
-          <button className="primary" disabled={busy || !text.trim()}>남기기</button>
-        </form>
+        {!readOnly && (
+          <form className="pilot-intent-form" onSubmit={async (e) => {
+            e.preventDefault()
+            if (text.trim() && await act(() => investApi.addIntent(text.trim()))) setText('')
+          }}>
+            <input value={text} maxLength={500} placeholder="운용 지시 남기기" aria-label="운용 지시" onChange={(e) => setText(e.target.value)} />
+            <button className="primary" disabled={busy || !text.trim()}>남기기</button>
+          </form>
+        )}
         <p className="muted small">채팅방에서 비서에게 말하면 비서가 이 목록을 정리해요(합치기·고치기·이번만). 글에 나온 종목·섹터 이름은 후보에 넣고(종목 → 보유 → 섹터 상위 종목), 나머지 뜻(공격적으로 등)은 에이전트들에게 관리자 메시지로 전해요.</p>
         <button className="link-button small" onClick={() => investApi.autopilotPreview().then(setPreview, (e) => setError(e.message))}>후보 미리 보기</button>
         {preview && (

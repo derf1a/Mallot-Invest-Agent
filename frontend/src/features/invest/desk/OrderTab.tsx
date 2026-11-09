@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useReadOnly } from '../../../shared/readOnly'
 import Modal from '../../../shared/ui/Modal'
 import { useLoad } from '../../../shared/useLoad'
 import { ApiError, investApi, type Order, type Side, type StockSnapshot } from '../api'
@@ -18,6 +19,7 @@ export default function OrderTab({ snap, initialPrice, version, onPlaced }: {
   version: number
   onPlaced: (order: Order) => void
 }) {
+  const readOnly = useReadOnly()
   const [side, setSide] = useState<Side>('buy')
   const [orderType, setOrderType] = useState<'limit' | 'market'>('limit')
   // 종목이 바뀌거나 호가에서 가격을 고르면 key 로 다시 마운트된다
@@ -80,6 +82,7 @@ export default function OrderTab({ snap, initialPrice, version, onPlaced }: {
 
   const disabled = busy || !info || !qty || qty <= 0 || !Number.isInteger(qty) || (orderType === 'limit' && !(limitPrice > 0)) || info.halted || foreign
 
+  if (readOnly) return <div className="order-tab"><p className="muted small">읽기 전용 — 주문은 관리자만 낼 수 있어요.</p></div>
   return (
     <div className="order-tab">
       <div className={`side-switch ${side}`} role="tablist" aria-label="주문 방향">

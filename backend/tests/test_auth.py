@@ -54,7 +54,7 @@ def test_changing_the_password_ends_old_sessions(client, admin_pw, monkeypatch):
     assert client.get("/api/invest/config").status_code == 401
 
 
-def test_viewer_enters_with_the_share_key_and_sees_only_share_api(client, admin_pw):
+def test_viewer_enters_with_the_share_key_and_reads_everything_but_writes_nothing(client, admin_pw):
     _login(client)
     share = client.get("/api/auth/share").json()
     assert share["enabled"] is False and share["path"] == f"/share?k={share['key']}"
@@ -69,10 +69,30 @@ def test_viewer_enters_with_the_share_key_and_sees_only_share_api(client, admin_
     st = client.get("/api/share/status").json()
     assert {"autopilot", "desk", "latest"} <= set(st) and isinstance(st["autopilot"]["intents"], int)  # 지시 글은 개수만
     assert client.get("/api/share/sessions").status_code == 200 and client.get("/api/share/reports").json() == []
-    # 관리자 API · 공유 관리 · 문서는 막힌다
-    for path in ("/api/invest/config", "/api/invest/assistant/messages", "/api/auth/share", "/api/llm/routes", "/docs"):
-        assert client.get(path).status_code == 401, path
-    assert client.post("/api/invest/orders", json={}).status_code == 401
+    # 관리자 화면을 읽기만 — 개발 화면(트레이스 · 실행 · 그래프)까지
+    for path in ("/api/invest/assistant/messages", "/api/llm/routes", "/api/traces", "/api/runs", "/api/graph/agents",
+                 "/api/invest/autopilot", "/api/invest/status"):
+        assert client.get(path).status_code == 200, path
+    # 키(가린 값도) · .env 위치 · vLLM 주소는 빼고 보낸다
+    cfg = client.get("/api/invest/config").json()
+    assert "keys" not in cfg and "env_file" not in cfg and "limits" in cfg
+    assert client.get("/api/llm/vllm").json()["url"] is None
+    # 공유 링크 · 키 · 문서는 읽기도 막는다
+    for path in ("/api/auth/share", "/docs", "/openapi.json"):
+        assert client.get(path).status_code == 403, path
+    # 쓰기는 모두 막는다 — 설정 · 주문 · 자동 운용 · 공유 · 비서
+    for method, path, body in (("put", "/api/invest/config/keys", {"DART_API_KEY": "x"}), ("post", "/api/invest/orders", {}),
+                               ("put", "/api/invest/autopilot", {"enabled": True}), ("put", "/api/auth/share", {"rotate": True}),
+                               ("post", "/api/invest/assistant/messages", {"text": "사 줘"}), ("delete", "/api/runs/1", None)):
+        r = client.request(method.upper(), path, json=body)
+        assert r.status_code == 403 and "읽기 전용" in r.json()["detail"], (method, path)
+    assert not security.enabled() or client.get("/api/auth/me").json()["role"] == "viewer"  # 로그아웃은 된다
+    assert client.post("/api/auth/logout").status_code == 200
+
+
+def test_admin_still_sees_keys(client, admin_pw):
+    _login(client)
+    assert "keys" in client.get("/api/invest/config").json() and client.get("/api/auth/share").status_code == 200
 
 
 def test_rotating_the_key_or_turning_share_off_cuts_viewers(client, admin_pw):

@@ -57,14 +57,14 @@ backend/            Python 3.12 · uv · FastAPI
   app/graph/        에이전트 카탈로그 · 흐름 그래프 · 관찰 그래프 · LangGraph 내보내기
   app/tracing/      트레이스 API · LangSmith 내보내기
   app/auth/         관리자 로그인 · 손님 공유 링크 · 요청마다 역할 검사(guard)
-  app/share/        손님 화면 데이터 (읽기만)
+  app/share/        휴대폰용 운용 현황 요약 데이터
   tests/            pytest (가짜 토스 계좌 · 가짜 LLM — 실제 주문 · LLM 호출 없음)
 frontend/           React 19 · Vite · TypeScript
   src/features/invest/    AI Trading · Market · Portfolio · Team
   src/features/observe/   Agents · Graph · Traces
   src/features/settings/  투자 키 · 한도, LLM (MLX · 경로 · vLLM), 공유 · 접근
   src/features/auth/      관리자 로그인
-  src/features/share/     손님 화면 (현황 · 보고서 · 회의, 휴대폰 탭)
+  src/features/share/     운용 현황 요약 (현황 · 보고서 · 회의, 휴대폰 탭)
 docs/               architecture.md · langgraph.md · share.md · images/
 scripts/            dev · serve · share · tunnel-setup · test · check-secrets
 ```
@@ -151,7 +151,7 @@ MLX 와 vLLM 은 같은 루프([app/llm/loop.py](backend/app/llm/loop.py))를 �
 - **관리자 비밀번호를 정하기 전에는 이 컴퓨터용이다.**
   - `make serve` 는 기본으로 `127.0.0.1` 에만 연다. 같은 와이파이의 다른 기기에서 열려면 `HOST=0.0.0.0` 을 주되, 믿는 네트워크에서만 연다.
   - 터널 · 프록시를 거쳐 온 요청은 비밀번호가 없으면 서버가 막는다.
-  - 인터넷 · 휴대폰에서 쓰려면 `make admin-password` → `make share` ([docs/share.md](docs/share.md)). 관리자는 비밀번호로 로그인하고, 손님은 읽기 전용 공유 링크로 운용 상황 · 보고서만 본다.
+  - 인터넷 · 휴대폰에서 쓰려면 `make admin-password` → `make share` ([docs/share.md](docs/share.md)). 관리자는 비밀번호로 로그인하고, 손님은 공유 링크로 같은 화면을 읽기만 한다 (설정 · 주문 · 대화를 못 바꾸고, 키 · 공유 설정은 못 본다).
 - **Mallot 과 같은 토스 키로 동시에 띄우지 않는다.**
   - 토스 토큰은 키당 하나라서, 다시 발급받으면 이전 토큰이 끊긴다.
   - 두 앱에서 자동 운용을 켜면 주문이 두 번 나갈 수 있다.

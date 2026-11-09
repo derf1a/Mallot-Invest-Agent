@@ -20,6 +20,7 @@ import RoomInfo from './agents/RoomInfo'
 import { findLast, useAssistant, useChat } from './agents/session'
 import { investApi, type AdviceStatus, type Agent, type AssistantMessage, type AutopilotStatus, type DeskTeam } from './api'
 import { sessionLabel, useTicker } from './format'
+import { useReadOnly } from '../../shared/readOnly'
 import { useLoad } from '../../shared/useLoad'
 
 type Panel = 'new' | 'sessions' | 'info' | 'autopilot' | 'members' | null
@@ -36,7 +37,8 @@ function lastSymbol(): string {
 
 export default function AiTrading() {
   const [params, setParams] = useSearchParams()
-  const [panel, setPanel] = useState<Panel>(() => (params.has('s') ? 'new' : null))
+  const readOnly = useReadOnly()  // 손님: 새 토론 · 중지 · 승인 버튼 없이 보기만
+  const [panel, setPanel] = useState<Panel>(() => (params.has('s') && !readOnly ? 'new' : null))
   const [version, setVersion] = useState(0)
   const tick = useTicker(4000)
   const { data: agents } = useLoad(() => investApi.agents(), [])
@@ -145,9 +147,11 @@ export default function AiTrading() {
           <MenuIcon /><span className="room-action-label">현황</span>
         </button>
       )}
-      <button className="room-action primary" onClick={() => toggle('new')} aria-label="새 토론" title="새 토론">
-        <PlusIcon /><span className="room-action-label">새 토론</span>
-      </button>
+      {!readOnly && (
+        <button className="room-action primary" onClick={() => toggle('new')} aria-label="새 토론" title="새 토론">
+          <PlusIcon /><span className="room-action-label">새 토론</span>
+        </button>
+      )}
     </>
   )
 
@@ -227,6 +231,7 @@ function SessionView({ id, run, live, activeRun, actions, roster, infoOpen, onCl
   /** 처음부터 보기 (회의 내역·'보기'로 열었을 때) */
   startAtTop?: boolean
 }) {
+  const readOnly = useReadOnly()
   const chat = useChat(id)
   const shown = chat.run ?? run
   const running = !!shown && isActive(shown.status)
@@ -259,7 +264,7 @@ function SessionView({ id, run, live, activeRun, actions, roster, infoOpen, onCl
           </div>
         </div>
         <div className="room-actions">
-          {running && live && (
+          {running && live && !readOnly && (
             <button className="stop-button" onClick={onStop} disabled={shown?.cancel_requested}>
               {shown?.cancel_requested ? '중지하는 중…' : '■ 중지'}
             </button>
@@ -330,6 +335,7 @@ function EmptyRoom({ actions, onNew, loading, onAsk, thread, thinking, onOpenSes
   onMembers: () => void
   onCloseMembers: () => void
 }) {
+  const readOnly = useReadOnly()
   const people = roster.filter((a) => a.enabled)
   return (
     <>
@@ -365,7 +371,7 @@ function EmptyRoom({ actions, onNew, loading, onAsk, thread, thinking, onOpenSes
                   </ol>
                   <p className="small muted">아래 입력창으로 비서에게 말하면 답하고(필요하면 다른 에이전트에게 묻고), 운용 지시를 정리하고, '지금 판단해 줘'면 바로 토론을 시작해요. 자동 운용을 켜면 정해진 시각마다 보유 종목과 운용 지시로 스스로 토론하고, 과반이 같은 방향이면 승인 없이 주문해요.</p>
                   <p className="small muted">에이전트 토론이 수익을 높인다고 보장하지 않아요. 판단과 책임은 관리자에게 있어요.</p>
-                  <button className="primary" onClick={onNew}>+ 새 토론 시작</button>
+                  {!readOnly && <button className="primary" onClick={onNew}>+ 새 토론 시작</button>}
                 </div>
                 <AssistantThread messages={thread} thinking={thinking} onOpenSession={onOpenSession} assistant={assistant}
                   advice={advice} onChoose={(t) => void onAsk(t)} />

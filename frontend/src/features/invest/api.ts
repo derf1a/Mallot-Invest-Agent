@@ -31,8 +31,9 @@ export interface KeyStatus {
 }
 
 export interface InvestConfig {
-  keys: KeyStatus[]
-  env_file: string
+  /** 키 · .env 위치 — 손님(읽기 전용)에게는 서버가 빼고 보낸다 */
+  keys?: KeyStatus[]
+  env_file?: string
   toss_configured: boolean
   pin_env_name: string
   pin_configured: boolean
