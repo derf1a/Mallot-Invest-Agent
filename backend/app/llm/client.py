@@ -20,6 +20,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from contextvars import ContextVar
 from dataclasses import dataclass
 
+from app.core import trace
 from app.core.db import connect
 
 log = logging.getLogger("llm")
@@ -92,8 +93,11 @@ def image_block(image: bytes, media_type: str) -> dict:
 
 def record(*, feature: str, model: str, usage: dict | None, cost_usd: float | None, duration_ms: int,
            api_duration_ms: int | None, turns: int | None, ok: bool, error: str | None, provider: str = PROVIDER) -> None:
-    """사용량 한 건 저장. 기록 실패가 본 기능을 막으면 안 되므로 오류는 로그만 남긴다."""
+    """사용량 한 건 저장 (+ 지금 LLM span 에 토큰 · 요금). 기록 실패가 본 기능을 막으면 안 되므로 오류는 로그만 남긴다."""
     u = usage or {}
+    trace.annotate(provider=provider, model=model, input_tokens=int(u.get("input_tokens") or 0),
+                   output_tokens=int(u.get("output_tokens") or 0), cache_read_tokens=int(u.get("cache_read_input_tokens") or 0),
+                   cost_usd=cost_usd, turns=turns, api_duration_ms=api_duration_ms)
     try:
         conn = connect()
         try:
@@ -150,6 +154,14 @@ async def _run(feature: str, prompt: str | list[dict], options, model: str) -> d
     return result.structured_output
 
 
+def _span_input(prompt: str | list[dict], system_prompt: str | None, tools: list["ToolDef"] | None = None) -> dict:
+    text = prompt if isinstance(prompt, str) else "\n\n".join(b.get("text", "[이미지]") for b in prompt)
+    out: dict = {"system": system_prompt or "", "prompt": text}
+    if tools is not None:
+        out["tools"] = [t.name for t in tools]
+    return out
+
+
 async def structured(
     feature: str,
     prompt: str | list[dict],
@@ -164,6 +176,14 @@ async def structured(
 
     has_image = isinstance(prompt, list) and any(b.get("type") == "image" for b in prompt)
     route = routes.resolve(feature, model, has_image=has_image)
+    with trace.span("llm", feature, input=_span_input(prompt, system_prompt),
+                    attrs={"feature": feature, "route": route.text, "route_source": route.source}) as sp:
+        sp.output = await _structured(feature, prompt, schema, route, system_prompt, max_turns)
+        return sp.output
+
+
+async def _structured(feature: str, prompt: str | list[dict], schema: dict, route, system_prompt: str | None,
+                      max_turns: int) -> dict:
     if route.provider != "claude":
         from app.llm import loop
 
@@ -201,6 +221,15 @@ def tool_id(name: str) -> str:
     return f"mcp__{MCP_SERVER}__{name}"
 
 
+def _traced_tool(t: ToolDef, parent: "trace.Span | None") -> ToolDef:
+    """도구 호출 하나 = tool span (SDK 의 도구 콜백은 문맥이 이어진다는 보장이 없어 부모를 직접 넘긴다)."""
+    async def handler(args: dict) -> object:
+        with trace.span("tool", t.name, input=args, attrs={"read_only": t.read_only}, parent=parent) as sp:
+            sp.output = await t.handler(args)
+            return sp.output
+    return ToolDef(t.name, t.description, t.input_schema, handler, t.read_only)
+
+
 async def agentic(
     feature: str,
     prompt: str,
@@ -215,6 +244,15 @@ async def agentic(
     from app.llm import routes
 
     route = routes.resolve(feature, model)
+    with trace.span("llm", feature, input=_span_input(prompt, system_prompt, tools),
+                    attrs={"feature": feature, "route": route.text, "route_source": route.source}) as sp:
+        traced = [_traced_tool(t, sp) for t in tools]
+        sp.output = await _agentic(feature, prompt, schema, traced, route, system_prompt, max_turns)
+        return sp.output
+
+
+async def _agentic(feature: str, prompt: str, schema: dict, tools: list[ToolDef], route, system_prompt: str | None,
+                   max_turns: int) -> dict:
     if route.provider != "claude":
         from app.llm import loop
 

@@ -268,4 +268,27 @@ MIGRATIONS: list[str] = [
         answer   TEXT    NOT NULL DEFAULT ''
     );
     """,
+    # v2 (추적): 호출 추적 span — 실행 · 단계 · 에이전트 · LLM · 도구 · 사건 (app/core/trace.py)
+    """
+    CREATE TABLE trace_spans (
+        id          TEXT    PRIMARY KEY,
+        trace_id    TEXT    NOT NULL,                 -- 맨 위 span 의 id (실행 하나 · 비서 답 하나)
+        parent_id   TEXT,
+        run_id      INTEGER REFERENCES runs(id) ON DELETE CASCADE,
+        kind        TEXT    NOT NULL CHECK (kind IN ('run', 'step', 'agent', 'llm', 'tool', 'event')),
+        name        TEXT    NOT NULL,
+        agent       TEXT,                             -- 이 span 을 일으킨 에이전트 키 (부모에게서 물려받음)
+        status      TEXT    NOT NULL DEFAULT 'running' CHECK (status IN ('running', 'ok', 'error', 'cancelled')),
+        start_ms    REAL    NOT NULL,                 -- epoch 밀리초
+        end_ms      REAL,
+        duration_ms INTEGER,
+        input_json  TEXT,
+        output_json TEXT,
+        attrs_json  TEXT    NOT NULL DEFAULT '{}',
+        error       TEXT
+    );
+    CREATE INDEX idx_trace_spans_trace ON trace_spans (trace_id, start_ms);
+    CREATE INDEX idx_trace_spans_run ON trace_spans (run_id);
+    CREATE INDEX idx_trace_spans_start ON trace_spans (start_ms);
+    """,
 ]
