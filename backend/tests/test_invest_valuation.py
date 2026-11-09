@@ -9,7 +9,8 @@ from datetime import date, datetime
 
 import pytest
 
-from app.invest import agents, desk_agents
+from app.invest import desk_agents
+from app.invest.debate import agents
 from app.invest.analysis import dart, scorelog, screening, valuation
 from app.invest.marketdata import market
 from app.invest.marketdata.market import SampleMarket
@@ -384,7 +385,7 @@ def test_research_excludes_holdings_and_records_everything(conn, broker, at_open
 
 
 def test_meeting_logs_only_real_decisions(conn, broker, at_open):
-    from app.invest import scopes
+    from app.invest.debate import scopes
     scopes.resolve(conn, SampleMarket(), {"scope": "scan", "intents": []}, 3)
     assert scorelog.runs(conn, "meeting") == []
     scopes.resolve(conn, SampleMarket(), {"scope": "scan", "intents": [], "run_id": 9, "agenda": "안건"}, 3, pick=lambda rows, t, n, c: screening.code_pick(rows, n))
@@ -436,7 +437,7 @@ def test_dart_key_saves_without_touching_toss_token(client, monkeypatch):
 
 
 def test_value_investor_has_the_tool():
-    from app.invest import agents
+    from app.invest.debate import agents
     assert "get_valuation" in next(a for a in agents.DEFAULT_ROSTER if a["key"] == "value")["tools"] and "get_valuation" in agents.TOOL_INFO
 
 

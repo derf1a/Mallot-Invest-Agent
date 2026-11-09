@@ -5,7 +5,8 @@ from datetime import datetime
 
 import pytest
 
-from app.invest import agents, assistant, autopilot
+from app.invest import assistant, autopilot
+from app.invest.debate import agents
 from app.invest.marketdata import market
 from app.invest.marketdata.market import KST
 from app.llm.client import LLMError
@@ -169,7 +170,7 @@ def test_agents_have_multinational_names(client):
 
 
 def test_meeting_minutes_written_by_assistant_or_code(client, broker, at_open, monkeypatch):
-    from app.invest import minutes
+    from app.invest.debate import minutes
     from tests.test_invest_ai import ALIGNED, Script
     monkeypatch.setattr(agents, "LLM", Script(ALIGNED, trade={"side": "buy", "quantity": 1, "order_type": "market", "reason": "합의"}))
     seen = {}

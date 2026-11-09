@@ -8,7 +8,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.invest import agents, assistant, autopilot, desk, desk_agents, stream, track
+from app.invest import assistant, autopilot, desk, desk_agents
+from app.invest.debate import agents, stream, track
 from app.invest.marketdata import market
 from app.invest.broker import trading
 from app.invest.jobs import agent_action

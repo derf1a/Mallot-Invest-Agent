@@ -35,7 +35,8 @@ import threading
 from collections.abc import Awaitable, Callable
 
 from app.core.db import connect
-from app.invest import agents, autopilot, briefing, desk, policy, scopes
+from app.invest import autopilot, briefing, desk, policy
+from app.invest.debate import agents, scopes
 from app.invest.marketdata import market
 from app.invest.broker import config
 from app.invest.marketdata.market import MarketError

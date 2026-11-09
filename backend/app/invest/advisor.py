@@ -15,7 +15,8 @@ import logging
 import sqlite3
 from collections.abc import Awaitable, Callable
 
-from app.invest import agents, assistant, desk, policy
+from app.invest import assistant, desk, policy
+from app.invest.debate import agents
 from app.invest.marketdata import market
 from app.invest.broker import config
 from app.llm.client import LLMError, ToolDef, agentic

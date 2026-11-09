@@ -3,7 +3,8 @@
 
 import pytest
 
-from app.invest import assistant, autopilot, briefing, desk, desk_agents, scopes
+from app.invest import assistant, autopilot, briefing, desk, desk_agents
+from app.invest.debate import scopes
 from app.invest.analysis import screening
 from app.invest.marketdata.market import SampleMarket
 from tests.test_invest import PIN, at_open  # noqa: F401 — 장중 시각 고정 fixture
@@ -122,7 +123,7 @@ def test_scan_uses_ideas_brief_and_focus(conn, broker, at_open):
 
 
 def test_debaters_see_the_research_brief(conn, at_open):
-    from app.invest import agents
+    from app.invest.debate import agents
     desk.save(conn, "market", {"regime": "risk_on", "headline": "반도체 강세", "by": "llm"})
     s = agents.Session(conn=conn, scope={"scope": "symbol", "label": "x", "candidates": [
         {"symbol": "005930", "name": "삼성전자", "security_type": "STOCK", "held": 0}]}, run_id=None, provider=SampleMarket(),
@@ -272,7 +273,7 @@ def test_flexible_setting_needs_pin(client, broker):
 
 
 def test_desk_people_do_not_clash_with_roster():
-    from app.invest import agents
+    from app.invest.debate import agents
     names = {p[0] for p in agents.PEOPLE.values()} | {p[0] for p in agents.NAME_POOL} | {assistant.PROFILE["name"]}
     assert not names & {p["name"] for p in desk.PEOPLE.values()}
     assert not set(agents.POKEMON.values()) & {p["pokemon"] for p in desk.PEOPLE.values()}

@@ -379,7 +379,7 @@ def test_session_bars_keep_only_the_latest_regular_session():
 def test_quote_and_technicals_use_the_same_range_and_volume_basis(client, broker, at_open, conn):
     """같은 말을 하는 숫자는 도구끼리 같다 — 기간 고저(일봉 고가·저가)와 20일 평균 거래량(오늘 제외)."""
     import asyncio
-    from app.invest import agents
+    from app.invest.debate import agents
 
     p = SampleMarket()
     s = agents.Session(conn=conn, scope={"scope": "stream", "label": "x", "candidates": [{"symbol": "005930", "name": "삼성전자"}]},
