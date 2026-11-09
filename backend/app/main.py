@@ -11,6 +11,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app import registry
+from app.auth.guard import guard
 from app.core import envfile, metrics, trace
 from app.core.db import connect, init_db
 from app.llm import local
@@ -41,6 +42,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="Mallot Invest Agent", lifespan=lifespan)
+app.middleware("http")(guard)  # 역할 검사 — 관리자 API 는 관리자만, 손님은 /api/share/* 만 (app/auth)
 
 
 @app.middleware("http")
