@@ -1,0 +1,87 @@
+/* ---------- 포트폴리오 ---------- */
+.portfolio-page .toolbar { margin-left: auto; }
+.pf-hero { display: flex; flex-direction: column; gap: 14px; }
+.pf-total { display: flex; flex-direction: column; gap: 2px; }
+.pf-big { font-family: var(--font-display); font-size: 2.2rem; font-weight: 650; letter-spacing: -0.02em; line-height: 1.15; }
+.pf-pnl { font-family: var(--font-display); font-size: 1.05rem; font-weight: 600; }
+.pf-tiles { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+.pf-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+.pf-alloc { grid-column: 1 / -1; }
+.pf-alloc .section-head { margin-bottom: 12px; }
+.pf-alloc .section-head h2 { margin: 0; }
+.holdings-grid .section-head { margin-bottom: 10px; }
+.portfolio-page .other-accounts { margin-top: 0; padding-top: 0; border-top: none; }
+.portfolio-page .other-accounts h2 { margin: 0; }
+.pf-effective { margin: 12px 0 0; }
+@media (max-width: 900px) { .pf-grid { grid-template-columns: minmax(0, 1fr); } }
+
+/* 배분 막대 + 범례 */
+.alloc { display: flex; flex-direction: column; gap: 12px; }
+.alloc-bar { position: relative; display: flex; gap: 2px; height: 28px; border-radius: 6px; overflow: visible; }
+.alloc-seg { min-width: 3px; height: 100%; flex-basis: 0; }
+.alloc-seg:first-child { border-radius: 6px 0 0 6px; }
+.alloc-seg:last-child { border-radius: 0 6px 6px 0; }
+.alloc-seg:only-child { border-radius: 6px; }
+.alloc-seg.cash, .swatch.cash { background: repeating-linear-gradient(135deg, var(--surface) 0 4px, var(--border) 4px 7px); box-shadow: inset 0 0 0 1px var(--border); }
+.alloc-legend { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 6px 18px; }
+.alloc-legend li { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: 8px; font-size: 0.88rem; }
+.alloc-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.swatch { display: inline-block; width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
+.viz-tip { position: absolute; z-index: 20; transform: translate(-50%, calc(-100% - 12px)); pointer-events: none; display: flex; flex-direction: column; gap: 2px;
+  padding: 7px 10px; border-radius: 8px; background: var(--text); color: var(--bg); font-size: 0.8rem; white-space: nowrap; box-shadow: 0 6px 18px rgb(0 0 0 / 0.2); }
+.viz-tip .muted { color: color-mix(in srgb, var(--bg) 70%, transparent); white-space: normal; max-width: 260px; }
+.viz-tip[data-edge='left'] { transform: translate(-14px, calc(-100% - 12px)); }
+.viz-tip[data-edge='right'] { transform: translate(calc(-100% + 14px), calc(-100% - 12px)); }
+
+/* 손익 막대 (가운데 0) */
+.pnl-chart { position: relative; }
+.pnl-bars { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.pnl-bars li { display: grid; grid-template-columns: minmax(0, 7.5em) minmax(80px, 1fr) auto; align-items: center; gap: 10px; padding: 3px 0; font-size: 0.85rem; }
+.pnl-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pnl-track { position: relative; height: 12px; }
+.pnl-track::before { content: ''; position: absolute; left: 50%; top: -3px; bottom: -3px; width: 1px; background: var(--border); }
+.pnl-track i { position: absolute; top: 1px; bottom: 1px; min-width: 2px; }
+.pnl-track i.gain { background: var(--up); border-radius: 0 4px 4px 0; }
+.pnl-track i.loss { background: var(--down); border-radius: 4px 0 0 4px; }
+.pnl-value { white-space: nowrap; }
+
+/* 비율 막대 */
+.meters { display: flex; flex-direction: column; gap: 14px; }
+.meter { display: flex; flex-direction: column; gap: 4px; }
+.meter-head { display: flex; justify-content: space-between; font-size: 0.9rem; }
+.meter-track { position: relative; height: 8px; border-radius: 4px; background: var(--surface); box-shadow: inset 0 0 0 1px var(--border); }
+.meter-track i { display: block; height: 100%; border-radius: 4px; background: var(--series-1); }
+.meter-track i.over { background: var(--warn); }
+.meter-mark { position: absolute; top: -3px; bottom: -3px; width: 2px; margin-left: -1px; background: var(--text); opacity: 0.55; border-radius: 1px; }
+
+/* 보유 목록 */
+.holdings-grid { display: flex; flex-direction: column; }
+.holdings-grid .section-head { flex-wrap: wrap; }
+.hg-table { display: flex; flex-direction: column; }
+.hg-row { display: grid; grid-template-columns: minmax(0, 2.2fr) minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 0.8fr) minmax(0, 0.9fr); align-items: center; gap: 12px;
+  width: 100%; padding: 10px 6px; border: none; border-bottom: 1px solid var(--border); border-radius: 0; background: none; text-align: left; }
+button.hg-row:hover { background: var(--surface); }
+.hg-head { padding: 6px; font-size: 0.8rem; color: var(--muted); }
+.hg-sort { border: none; background: none; padding: 2px 0; color: inherit; font-size: inherit; text-align: right; }
+.hg-sort.hg-name, .hg-head .hg-name { text-align: left; }
+.hg-sort.on { color: var(--accent); font-weight: 650; }
+.hg-head .hg-weight { text-align: right; }
+.hg-name { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.hg-name-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.hg-name-text b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.hg-name-text .muted { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hg-value { display: flex; flex-direction: column; gap: 2px; align-items: flex-end; }
+.hg-pnl, .hg-rate { text-align: right; }
+.hg-weight { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.hg-weight-bar { width: 100%; max-width: 90px; height: 4px; border-radius: 2px; background: var(--surface); overflow: hidden; }
+.hg-weight-bar i { display: block; height: 100%; }
+@media (max-width: 640px) {
+  .hg-head { display: none; }
+  .hg-row { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: 'name value' 'name pnl' 'weight weight'; gap: 4px 12px; }
+  .hg-row .hg-name { grid-area: name; }
+  .hg-row .hg-value { grid-area: value; }
+  .hg-row .hg-pnl { grid-area: pnl; font-size: 0.85rem; }
+  .hg-row .hg-rate { display: none; }
+  .hg-row .hg-weight { grid-area: weight; flex-direction: row-reverse; align-items: center; justify-content: flex-end; gap: 8px; }
+  .hg-weight-bar { max-width: none; flex: 1; }
+}
