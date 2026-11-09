@@ -4,10 +4,10 @@
 - agentic(): 앱이 정한 도구(ToolDef)만 쓸 수 있는 에이전트 — 도구를 여러 번 부른 뒤 구조화 출력으로 끝낸다.
   Claude Code 기본 도구(셸·파일 등)는 모두 끄고(tools=[]), 다른 MCP 설정도 불러오지 않는다(strict_mcp_config).
 
-연결: Claude Agent SDK (로컬 Claude Code CLI). ANTHROPIC_API_KEY 가 있으면 API 키, 없으면 Claude Code 로그인(구독)을 쓴다.
-     또는 로컬 LLM (mlx-lm, app/llm/local.py·loop.py). 공급자 고르기:
-     - model 을 비우면 설정 > LLM 의 기본 LLM, model='local' 이면 로컬, 'claude-…' 면 그 Claude 모델.
-     - 이미지가 든 프롬프트(캡쳐 판독)는 로컬 모델이 읽지 못해 언제나 Claude.
+연결 (경로 정하기는 app/llm/routes.py — 에이전트 · 부르는 쪽 model · 기능 · 기본 순):
+     - Claude Agent SDK (로컬 Claude Code CLI). ANTHROPIC_API_KEY 가 있으면 API 키, 없으면 Claude Code 로그인(구독).
+     - 로컬 MLX (mlx-lm 작업 프로세스, app/llm/local.py) · vLLM (OpenAI 호환 서버, app/llm/vllm.py) — 둘 다 app/llm/loop.py 루프.
+     - 이미지가 든 프롬프트는 언제나 Claude.
 기록: 기능, 공급자, 모델, input/output/캐시 토큰, SDK 가 알려주는 API 요금 환산액, 지연, 턴 수, 성공·실패, 실행(run) id.
 """
 
@@ -48,27 +48,36 @@ class LLMError(Exception):
 
 
 def default_model(model: str | None = None) -> str:
-    """Claude 로 보낼 모델 (로컬을 가리키는 값이면 Claude 기본 모델)."""
-    return model if model and model != LOCAL else os.environ.get("MIA_LLM_MODEL", DEFAULT_MODEL)
+    """Claude 로 보낼 모델 (Claude 모델 이름이 아니면 Claude 기본 모델)."""
+    return model if model and model.startswith("claude-") else os.environ.get("MIA_LLM_MODEL", DEFAULT_MODEL)
 
 
 def uses_local(model: str | None = None, has_image: bool = False) -> bool:
-    if has_image:
-        return False
-    if model:
-        return model == LOCAL
-    from app.llm import local
+    """Claude 가 아닌 곳(로컬 MLX · vLLM)으로 가는지 — 경로 정하기는 app.llm.routes."""
+    from app.llm import routes
 
-    return local.provider() == "local"
+    return routes.resolve("", model, has_image=has_image, agent="").provider != "claude"
 
 
 def model_label(model: str | None = None) -> str:
     """실제로 쓸 모델 이름 (로그·화면용)."""
-    if uses_local(model):
+    from app.llm import routes
+
+    r = routes.resolve("", model, agent="")
+    if r.provider == "claude":
+        return default_model(r.model)
+    return routes.label(r) if r.provider == "vllm" else f"{routes.label(r).split(' · ', 1)[1]} (로컬)"
+
+
+def _backend(route):
+    """Claude 가 아닌 경로의 loop 백엔드."""
+    if route.provider == "mlx":
         from app.llm import local
 
-        return f"{local.model_name()} (로컬)"
-    return default_model(model)
+        return local.MlxBackend()
+    from app.llm import vllm
+
+    return vllm.VllmBackend(route.model or None)
 
 
 def auth_mode() -> str:
@@ -151,15 +160,18 @@ async def structured(
     max_turns: int = 3,
 ) -> dict:
     """구조화 출력(JSON Schema)으로 응답 하나를 받는다. prompt 가 리스트면 이미지 등 content 블록."""
-    has_image = isinstance(prompt, list) and any(b.get("type") == "image" for b in prompt)
-    if uses_local(model, has_image):
-        from app.llm import local, loop
+    from app.llm import routes
 
-        return await loop.structured(feature, prompt, schema, backend=local.MlxBackend(), system_prompt=system_prompt,
+    has_image = isinstance(prompt, list) and any(b.get("type") == "image" for b in prompt)
+    route = routes.resolve(feature, model, has_image=has_image)
+    if route.provider != "claude":
+        from app.llm import loop
+
+        return await loop.structured(feature, prompt, schema, backend=_backend(route), system_prompt=system_prompt,
                                      max_turns=max_turns)
     from claude_agent_sdk import ClaudeAgentOptions
 
-    model = default_model(model)
+    model = default_model(route.model)
     options = ClaudeAgentOptions(
         model=model,
         system_prompt=system_prompt,
@@ -200,10 +212,13 @@ async def agentic(
     max_turns: int = 10,
 ) -> dict:
     """앱 도구만 쓰는 에이전트 실행 → 구조화 출력. 도구 오류는 에이전트에게 오류 결과로 돌려준다."""
-    if uses_local(model):
-        from app.llm import local, loop
+    from app.llm import routes
 
-        return await loop.agentic(feature, prompt, schema, tools=tools, backend=local.MlxBackend(),
+    route = routes.resolve(feature, model)
+    if route.provider != "claude":
+        from app.llm import loop
+
+        return await loop.agentic(feature, prompt, schema, tools=tools, backend=_backend(route),
                                   system_prompt=system_prompt, max_turns=max_turns)
     from claude_agent_sdk import ClaudeAgentOptions, ToolAnnotations, create_sdk_mcp_server, tool
 
@@ -217,7 +232,7 @@ async def agentic(
                 return {"content": [{"type": "text", "text": f"오류: {e}"}], "is_error": True}
         hints = ToolAnnotations(readOnlyHint=t.read_only, destructiveHint=not t.read_only)
         sdk_tools.append(tool(t.name, t.description, t.input_schema, annotations=hints)(run))
-    model = default_model(model)
+    model = default_model(route.model)
     options = ClaudeAgentOptions(
         model=model,
         system_prompt=system_prompt,
