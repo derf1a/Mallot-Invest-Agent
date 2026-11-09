@@ -88,6 +88,7 @@ make test               # 비밀값 검사 + pytest + oxlint · tsc · vite buil
 |---|---|
 | `TOSS_CLIENT_ID` · `TOSS_CLIENT_SECRET` · `TOSS_ACCOUNT_SEQ` | 토스증권 Open API (없으면 샘플 시세) — 허용 IP 등록 필요 |
 | `MIA_TRADING_PIN` | 주문 PIN (4자리 이상). 화면 · API 로 못 바꾼다 |
+| `MIA_AUTOPILOT` | 자동 운용 켜기(1) · 끄기(0). 켜면 승인 없이 실계좌 주문 — 서버를 다시 켜지 않아도 따른다 |
 | `MIA_ADMIN_PASSWORD_HASH` | 관리자 비밀번호 해시 (`make admin-password` 가 넣는다). 인터넷에 열 때 필수 — [docs/share.md](docs/share.md) |
 | `DART_API_KEY` | OpenDART 재무 (가치평가, 선택) |
 | `ANTHROPIC_API_KEY` · `MIA_LLM_MODEL` | Claude (비우면 Claude Code 로그인) |
@@ -144,7 +145,9 @@ MLX 와 vLLM 은 같은 루프([app/llm/loop.py](backend/app/llm/loop.py))를 �
   5. 건당 한도 · 하루 한도
   6. 매수 가능 금액 / 판매 가능 수량
   7. 매수 후 종목 비중
-- **에이전트 주문은 기본으로 관리자 승인을 기다린다.** 자동 운용을 켜면(주문 PIN) 승인 없이 낸다. 그래도 위 검사는 그대로다.
+- **에이전트 주문은 기본으로 관리자 승인을 기다린다.** 자동 운용을 켜면(`.env` 의 `MIA_AUTOPILOT=1`) 승인 없이 낸다. 그래도 위 검사는 그대로다.
+  - 켜기 · 끄기는 PIN 을 묻지 않는다. 화면 버튼도 같은 줄을 고치고, 파일을 손으로 고쳐도 20초 안에 따른다.
+  - 회의 시각 · 운용 방식 · 운용 지시 · 지금 판단은 주문 PIN 을 묻는다.
 - **관리자 비밀번호를 정하기 전에는 이 컴퓨터용이다.**
   - `make serve` 는 기본으로 `127.0.0.1` 에만 연다. 같은 와이파이의 다른 기기에서 열려면 `HOST=0.0.0.0` 을 주되, 믿는 네트워크에서만 연다.
   - 터널 · 프록시를 거쳐 온 요청은 비밀번호가 없으면 서버가 막는다.
