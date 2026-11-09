@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app import registry
-from app.core import envfile, metrics
+from app.core import envfile, metrics, trace
 from app.core.db import connect, init_db
 from app.llm import local
 from app.runs.runner import recover_interrupted
@@ -30,6 +30,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
             log.info("서버가 꺼질 때 돌던 실행 %d건을 실패로 정리했어요", stopped)
     finally:
         conn.close()
+    trace.prune(days=30)
     services = registry.services()  # 기능 패키지의 service.py (예: 자동 운용 일정)
     for s in services:
         s.start()

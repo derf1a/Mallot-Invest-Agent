@@ -16,6 +16,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from app.core import trace
 from app.core.db import connect, data_dir
 from app.llm.client import CURRENT_RUN
 
@@ -164,7 +165,10 @@ def execute(run_id: int) -> None:
     token = CURRENT_RUN.set(run_id)  # 이 실행에서 부른 LLM 사용량·트레이스에 실행 id 를 남긴다
     try:
         ctx.log(f"시작: {spec.title}")
-        summary = spec.run(ctx, json.loads(row["params_json"]))
+        params = json.loads(row["params_json"])
+        with trace.span("run", spec.title, run_id=run_id, input=params, attrs={"kind": row["kind"]}) as root:
+            summary = spec.run(ctx, params)
+            root.output = summary
         ctx.progress(1.0)
         ctx.log("완료")
         _finish(conn, run_id, "succeeded", summary=summary)

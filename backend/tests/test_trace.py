@@ -80,3 +80,31 @@ def test_long_values_are_clipped():
     with trace.span("tool", "big", input="x" * (trace.CLIP + 10)):
         pass
     assert json.loads(rows()[0]["input_json"])["clipped"] is True
+
+
+def test_agent_llm_and_tool_calls_form_one_tree(monkeypatch):
+    from app.llm import client as llm, routes, vllm
+
+    monkeypatch.setenv("MIA_VLLM_URL", "http://127.0.0.1:8001/v1")
+    replies = [
+        {"model": "q", "choices": [{"message": {"content": "", "tool_calls": [
+            {"id": "c1", "type": "function", "function": {"name": "get_price", "arguments": '{"symbol": "005930"}'}}]},
+            "finish_reason": "tool_calls"}], "usage": {"prompt_tokens": 50, "completion_tokens": 5}},
+        {"model": "q", "choices": [{"message": {"content": '{"stance": "buy"}'}, "finish_reason": "stop"}],
+         "usage": {"prompt_tokens": 80, "completion_tokens": 9}},
+    ]
+    monkeypatch.setattr(vllm, "HTTP", lambda *a, **k: (200, json.dumps(replies.pop(0)).encode()))
+    routes.set_routes(default="vllm:q")
+
+    async def price(_args):
+        return {"price": 71000}
+
+    tools = [llm.ToolDef("get_price", "현재가", {"type": "object"}, price)]
+    with routes.as_agent("technical"):
+        asyncio.run(llm.agentic("agent_action", "판단", {"type": "object"}, tools=tools, system_prompt="성향"))
+    got = {r["kind"]: r for r in rows()}
+    assert got["llm"]["parent_id"] == got["agent"]["id"] and got["tool"]["parent_id"] == got["llm"]["id"]
+    assert got["tool"]["agent"] == "technical" and json.loads(got["tool"]["output_json"]) == {"price": 71000}
+    attrs = json.loads(got["llm"]["attrs_json"])
+    assert (attrs["provider"], attrs["route"], attrs["input_tokens"], attrs["output_tokens"]) == ("vllm", "vllm:q", 130, 14)
+    assert json.loads(got["llm"]["input_json"])["tools"] == ["get_price"]

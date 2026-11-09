@@ -17,6 +17,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import asdict, dataclass
 
+from app.core import trace
 from app.core.db import connect
 
 S_ROUTES = "llm_routes"
@@ -28,9 +29,14 @@ AGENT: ContextVar[str | None] = ContextVar("llm_agent", default=None)
 
 @contextmanager
 def as_agent(key: str | None) -> Iterator[None]:
+    """이 안의 LLM 호출은 key 에이전트가 한 것 — 경로를 고를 때 쓰고, 추적에는 agent span 하나로 남는다."""
     token = AGENT.set(key)
     try:
-        yield
+        if key:
+            with trace.span("agent", key, agent=key):
+                yield
+        else:
+            yield
     finally:
         AGENT.reset(token)
 
