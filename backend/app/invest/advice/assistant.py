@@ -35,9 +35,13 @@ import threading
 from collections.abc import Awaitable, Callable
 
 from app.core.db import connect
-from app.invest import agents, autopilot, briefing, config, desk, market, policy, scopes
-from app.invest.market import MarketError
-from app.invest.toss import TossError
+from app.invest.analysis import policy
+from app.invest.broker import config
+from app.invest.broker.toss import TossError
+from app.invest.debate import agents, scopes
+from app.invest.marketdata import market
+from app.invest.marketdata.market import MarketError
+from app.invest.ops import autopilot, briefing, desk
 from app.llm.client import LLMError, ToolDef, agentic
 from app.system import issues
 
@@ -188,7 +192,7 @@ def _process(msg_id: int, conn: sqlite3.Connection | None = None) -> None:
     conn = conn or connect()
     try:
         with _lock:
-            from app.invest import advisor  # advisor 가 이 모듈(add·apply_advice)을 불러서 늦게
+            from app.invest.advice import advisor  # advisor 가 이 모듈(add·apply_advice)을 불러서 늦게
             if advisor.state(conn)["open"]:  # 자문 상담 중 — 관리자 말은 자문 에이전트에게
                 try:
                     advisor.turn(conn, msg_id)
@@ -408,7 +412,7 @@ def build_tools(conn: sqlite3.Connection, s: agents.Session, used: list[str], mo
             add(conn, "event", f"설정 변경 · {what}: {before} → {after}", kind="setting", what=what)
 
     async def get_settings(_: dict) -> dict:
-        from app.invest import morning  # morning 이 이 모듈(add·PROFILE)을 불러서 늦게
+        from app.invest.ops import morning  # morning 이 이 모듈(add·PROFILE)을 불러서 늦게
         note("get_settings")
         st = autopilot.status(conn)
         return {"autopilot": st["config"], "auto_judgment_window": st["window"] or ["09:05", "15:15"],
@@ -476,7 +480,7 @@ def build_tools(conn: sqlite3.Connection, s: agents.Session, used: list[str], mo
         return {"ok": True, "before": before, "after": after}
 
     async def update_briefing(a: dict) -> dict:
-        from app.invest import morning
+        from app.invest.ops import morning
         before = morning.get_config(conn)
         try:
             after = morning.save_config(
@@ -549,7 +553,7 @@ def build_tools(conn: sqlite3.Connection, s: agents.Session, used: list[str], mo
         return {"ok": True, "changed": [f"{d['label']}: {d['before']} → {d['after']}" for d in out["diff"]] or "바뀐 것 없음"}
 
     async def start_advice(a: dict) -> dict:
-        from app.invest import advisor
+        from app.invest.advice import advisor
         topics = [str(t) for t in a["topics"]] if isinstance(a.get("topics"), list) else None
         st = advisor.start(conn, by="assistant", topics=topics, note=str(a.get("note") or ""))
         note("start_advice")

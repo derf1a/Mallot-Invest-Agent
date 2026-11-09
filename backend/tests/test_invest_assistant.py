@@ -5,8 +5,11 @@ from datetime import datetime
 
 import pytest
 
-from app.invest import agents, assistant, autopilot, market
-from app.invest.market import KST
+from app.invest.advice import assistant
+from app.invest.debate import agents
+from app.invest.marketdata import market
+from app.invest.marketdata.market import KST
+from app.invest.ops import autopilot
 from app.llm.client import LLMError
 from tests.test_invest import PIN, at_open  # noqa: F401 — 장중 시각 고정 fixture
 
@@ -168,7 +171,7 @@ def test_agents_have_multinational_names(client):
 
 
 def test_meeting_minutes_written_by_assistant_or_code(client, broker, at_open, monkeypatch):
-    from app.invest import minutes
+    from app.invest.debate import minutes
     from tests.test_invest_ai import ALIGNED, Script
     monkeypatch.setattr(agents, "LLM", Script(ALIGNED, trade={"side": "buy", "quantity": 1, "order_type": "market", "reason": "합의"}))
     seen = {}
@@ -203,7 +206,8 @@ def test_meeting_minutes_written_by_assistant_or_code(client, broker, at_open, m
 
 
 def test_performance_and_briefing(client, broker, at_open):
-    from app.invest import briefing, trading
+    from app.invest.ops import briefing
+    from app.invest.broker import trading
     from app.core.db import connect
     conn = connect()
     trading.place_order(conn, symbol="005930", side="buy", order_type="market", quantity=3, source="agent", run_id=None,
@@ -232,7 +236,9 @@ def test_report_summarizes_meetings_and_market_issues(client, broker, at_open, m
     """회의 요약(회의록·주문·다음에 볼 것, 진행 중인 채널은 지금 입장, 끊긴 회의는 뺌)과 장내 이슈(시장 뉴스·보유 종목 뉴스)."""
     import json
     from app.core.db import connect, data_dir
-    from app.invest import briefing, news, trading
+    from app.invest.ops import briefing
+    from app.invest.marketdata import news
+    from app.invest.broker import trading
     from tests.test_invest_ai import RSS
     conn = connect()
     monkeypatch.setattr(news, "HTTP", lambda *_a, **_k: (200, RSS.encode()))
@@ -281,8 +287,10 @@ def test_report_history_and_sector_rates(client, broker, at_open, monkeypatch):
     """수익률 추이: 지나간 보고서(기준 원금 시작일이 같은 것)의 값 + 지금, 지수는 시작 전 종가 대비. 섹터 의견에는 기간 등락."""
     from datetime import timedelta
     from app.core.db import connect
-    from app.invest import briefing, desk, market, news, policy
-    from app.invest.market import MarketError, SampleMarket
+    from app.invest.analysis import policy
+    from app.invest.ops import briefing, desk
+    from app.invest.marketdata import market, news
+    from app.invest.marketdata.market import MarketError, SampleMarket
     from tests.test_invest_ai import RSS
     conn = connect()
     monkeypatch.setattr(news, "HTTP", lambda *_a, **_k: (200, RSS.encode()))
@@ -342,8 +350,8 @@ def test_assistant_makes_report(client, broker, at_open, monkeypatch):
 def test_morning_briefing_daily(client, broker, monkeypatch):
     from datetime import datetime
     from app.core.db import connect
-    from app.invest import morning
-    from app.invest.market import KST, SampleMarket
+    from app.invest.ops import morning
+    from app.invest.marketdata.market import KST, SampleMarket
 
     class Holiday(SampleMarket):
         def session(self):
@@ -388,7 +396,8 @@ def test_morning_briefing_daily(client, broker, monkeypatch):
 
 
 def test_assistant_changes_settings_by_chat(client, broker, at_open, monkeypatch):
-    from app.invest import config, morning
+    from app.invest.ops import morning
+    from app.invest.broker import config
     fake = Fake([
         ("get_settings", {}),
         ("update_schedule", {"slots": ["09:10", "11:00", "13:30", "15:00"], "max_extra": 1}),
@@ -425,7 +434,7 @@ def test_assistant_changes_settings_by_chat(client, broker, at_open, monkeypatch
 
 def test_briefing_schedule_days():
     from datetime import date
-    from app.invest import morning
+    from app.invest.ops import morning
     cfg = {**morning.DEFAULT_CONFIG}
     assert morning.describe(cfg) == "매일 08:30" and morning.due_on(cfg, date(2026, 10, 31))
     weekly = {**cfg, "weekdays": [0]}
@@ -440,8 +449,8 @@ def test_briefing_schedule_days():
 def test_briefing_on_holiday_when_not_skipping(client, monkeypatch):
     from datetime import datetime
     from app.core.db import connect
-    from app.invest import morning
-    from app.invest.market import KST, SampleMarket
+    from app.invest.ops import morning
+    from app.invest.marketdata.market import KST, SampleMarket
 
     class Holiday(SampleMarket):
         def session(self):
@@ -460,7 +469,8 @@ def test_briefing_on_holiday_when_not_skipping(client, monkeypatch):
 
 def test_baseline_return(client, broker, at_open, monkeypatch):
     from app.core.db import connect
-    from app.invest import briefing, trading
+    from app.invest.ops import briefing
+    from app.invest.broker import trading
     conn = connect()
     assert client.get("/api/invest/performance").json()["baseline"] is None             # 기준을 정하기 전
     trading.place_order(conn, symbol="005930", side="buy", order_type="market", quantity=2, source="manual", confirm_live=True)

@@ -11,7 +11,7 @@ import os
 import threading
 
 from app.core.db import connect
-from app.invest import autopilot, desk, desk_agents, morning
+from app.invest.ops import autopilot, desk, desk_agents, morning
 
 INTERVAL = 20
 log = logging.getLogger("uvicorn.error")

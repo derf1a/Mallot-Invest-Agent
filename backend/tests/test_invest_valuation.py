@@ -9,8 +9,11 @@ from datetime import date, datetime
 
 import pytest
 
-from app.invest import agents, dart, desk_agents, market, scorelog, screening, valuation
-from app.invest.market import SampleMarket
+from app.invest.analysis import dart, scorelog, screening, valuation
+from app.invest.debate import agents
+from app.invest.marketdata import market
+from app.invest.marketdata.market import SampleMarket
+from app.invest.ops import desk_agents
 from tests.test_invest import at_open  # noqa: F401 — 장중 시각 고정 fixture
 from tests.test_invest_autopilot import conn, pilot  # noqa: F401 — fixture
 
@@ -363,7 +366,7 @@ def test_pool_adds_sector_mid_caps_and_value(conn):
 
 
 def test_research_excludes_holdings_and_records_everything(conn, broker, at_open, monkeypatch):
-    from app.invest import autopilot
+    from app.invest.ops import autopilot
     fill(conn, "005930", 100e9, 15e9)
     autopilot.add_intent(conn, "NAVER 를 눈여겨보자")                # 운용 지시에 나와도 보유면 발굴이 아니라 회의에서 본다
     monkeypatch.setattr(desk_agents, "_held", lambda c, p, notes: {"035420"})
@@ -382,7 +385,7 @@ def test_research_excludes_holdings_and_records_everything(conn, broker, at_open
 
 
 def test_meeting_logs_only_real_decisions(conn, broker, at_open):
-    from app.invest import scopes
+    from app.invest.debate import scopes
     scopes.resolve(conn, SampleMarket(), {"scope": "scan", "intents": []}, 3)
     assert scorelog.runs(conn, "meeting") == []
     scopes.resolve(conn, SampleMarket(), {"scope": "scan", "intents": [], "run_id": 9, "agenda": "안건"}, 3, pick=lambda rows, t, n, c: screening.code_pick(rows, n))
@@ -424,7 +427,8 @@ def test_score_api_reads_back(client):
 
 
 def test_dart_key_saves_without_touching_toss_token(client, monkeypatch):
-    from app.invest import api as invest_api, config
+    from app.invest import api as invest_api
+    from app.invest.broker import config
     monkeypatch.setattr(config.envfile, "update", lambda values: None)
     cleared = []
     monkeypatch.setattr(invest_api, "clear_token_cache", lambda: cleared.append(1))
@@ -433,7 +437,7 @@ def test_dart_key_saves_without_touching_toss_token(client, monkeypatch):
 
 
 def test_value_investor_has_the_tool():
-    from app.invest import agents
+    from app.invest.debate import agents
     assert "get_valuation" in next(a for a in agents.DEFAULT_ROSTER if a["key"] == "value")["tools"] and "get_valuation" in agents.TOOL_INFO
 
 

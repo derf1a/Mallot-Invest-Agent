@@ -3,8 +3,11 @@
 
 import pytest
 
-from app.invest import assistant, autopilot, briefing, desk, desk_agents, scopes, screening
-from app.invest.market import SampleMarket
+from app.invest.advice import assistant
+from app.invest.analysis import screening
+from app.invest.debate import scopes
+from app.invest.marketdata.market import SampleMarket
+from app.invest.ops import autopilot, briefing, desk, desk_agents
 from tests.test_invest import PIN, at_open  # noqa: F401 — 장중 시각 고정 fixture
 from tests.test_invest_assistant import Fake, say, thread
 from tests.test_invest_autopilot import Holiday, at, conn, pilot  # noqa: F401 — fixture
@@ -121,7 +124,7 @@ def test_scan_uses_ideas_brief_and_focus(conn, broker, at_open):
 
 
 def test_debaters_see_the_research_brief(conn, at_open):
-    from app.invest import agents
+    from app.invest.debate import agents
     desk.save(conn, "market", {"regime": "risk_on", "headline": "반도체 강세", "by": "llm"})
     s = agents.Session(conn=conn, scope={"scope": "symbol", "label": "x", "candidates": [
         {"symbol": "005930", "name": "삼성전자", "security_type": "STOCK", "held": 0}]}, run_id=None, provider=SampleMarket(),
@@ -199,7 +202,7 @@ def test_adhoc_waits_for_running_debate_and_has_daily_cap(conn, broker, pilot, m
 
 # ---- 일정 ----
 def test_desk_tick_schedule(conn, broker, monkeypatch):
-    from app.invest import market
+    from app.invest.marketdata import market
     clock = {"t": at("08:25")}
     monkeypatch.setattr(market, "now_kst", lambda: clock["t"])  # 리서치 작업이 남기는 날짜
 
@@ -271,7 +274,7 @@ def test_flexible_setting_needs_pin(client, broker):
 
 
 def test_desk_people_do_not_clash_with_roster():
-    from app.invest import agents
+    from app.invest.debate import agents
     names = {p[0] for p in agents.PEOPLE.values()} | {p[0] for p in agents.NAME_POOL} | {assistant.PROFILE["name"]}
     assert not names & {p["name"] for p in desk.PEOPLE.values()}
     assert not set(agents.POKEMON.values()) & {p["pokemon"] for p in desk.PEOPLE.values()}
@@ -296,7 +299,7 @@ def test_ai_set_meetings_always_meet(conn, pilot):
 
 
 def test_morning_research_retries_after_failure(conn, broker, monkeypatch):
-    from app.invest import market
+    from app.invest.marketdata import market
     clock = {"t": at("08:25")}
     monkeypatch.setattr(market, "now_kst", lambda: clock["t"])
     autopilot.save_config(conn, enabled=True)

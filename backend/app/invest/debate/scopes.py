@@ -15,10 +15,13 @@ import re
 import sqlite3
 from collections.abc import Callable
 
-from app.invest import desk, exits, market, policy, scorelog, screening, trading, watch
-from app.invest.market import MarketError
-from app.invest.toss import TossError
-from app.invest.trading import TradeError
+from app.invest.analysis import exits, policy, scorelog, screening
+from app.invest.broker import trading
+from app.invest.broker.toss import TossError
+from app.invest.broker.trading import TradeError
+from app.invest.marketdata import market, watch
+from app.invest.marketdata.market import MarketError
+from app.invest.ops import desk
 
 SCOPES = {"symbol": "단일 종목", "sector": "섹터", "portfolio": "전체 (보유 + 관심)", "scan": "시장 스캔 (여러 종목 → 후보 선정)",
           "autopilot": "자동 운용 (시장 스캔 + 운용 지시)"}

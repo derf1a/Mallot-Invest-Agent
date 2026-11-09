@@ -4,7 +4,9 @@ import re
 import pytest
 
 from app.core.db import connect
-from app.invest import agents, news, report
+from app.invest.debate import agents
+from app.invest.marketdata import news
+from app.invest.ops import report
 from app.llm.client import LLMError
 from tests.test_invest import PIN, at_open  # noqa: F401 — 장중 시각 고정 fixture
 
@@ -204,7 +206,7 @@ def test_place_order_tool_refuses_opposite_side_and_second_order(client, monkeyp
 
 
 def test_guard_rejection_then_smaller_retry(client, conn, monkeypatch, broker, at_open):
-    from app.invest import config
+    from app.invest.broker import config
     price = client.get("/api/invest/stocks/005930").json()["price"]
     config.save_trading(conn, limits_={"max_order_krw": price * 1.5})
     script = Script(ALIGNED, trade={"side": "buy", "quantity": 5, "order_type": "market", "reason": "합의", "retry": True})
@@ -370,7 +372,7 @@ def test_session_json_is_valid_and_logs(client, monkeypatch, broker, at_open):
 
 
 def test_auto_approve_bypass_fills_immediately(client, conn, monkeypatch, broker, at_open):
-    from app.invest import config
+    from app.invest.broker import config
     config.save_trading(conn, agent_auto=True)
     monkeypatch.setattr(agents, "LLM", Script(ALIGNED, trade={"side": "buy", "quantity": 1, "order_type": "market", "reason": "합의"}))
     run = _start(client, rounds=2).json()
@@ -446,8 +448,8 @@ def test_holding_indicators_table(client, broker, at_open):
 
 def test_performance_items_by_stock_order_and_meeting(client, broker, at_open):
     from app.core.db import connect
-    from app.invest import briefing
-    from app.invest.market import SampleMarket
+    from app.invest.ops import briefing
+    from app.invest.marketdata.market import SampleMarket
     broker.positions["005930"] = {"quantity": 10.0, "cost": 700_000.0}
     broker.positions["000660"] = {"quantity": 1.0, "cost": 400_000.0}
     c = connect()
@@ -478,7 +480,7 @@ def test_stale_news_report_is_not_handed_to_agents(client, monkeypatch):
     import asyncio
     from datetime import timedelta
     from app.core.db import connect
-    from app.invest import market
+    from app.invest.marketdata import market
 
     conn = connect()
     conn.execute("INSERT INTO runs (kind, name, status, finished_at, artifact_path) VALUES ('news_report', 'r', 'succeeded', ?, 'x')",

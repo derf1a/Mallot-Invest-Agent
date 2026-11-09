@@ -6,9 +6,10 @@ import pytest
 
 from app.core import envfile
 from app.core.db import connect
-from app.invest import config, market, toss, trading
-from app.invest.market import KST, SampleMarket, tick_size
-from app.invest.toss import TossClient, TossError, TossUncertain, match_account
+from app.invest.broker import config, toss, trading
+from app.invest.broker.toss import TossClient, TossError, TossUncertain, match_account
+from app.invest.marketdata import market
+from app.invest.marketdata.market import KST, SampleMarket, tick_size
 from tests.conftest import PIN as PIN_VALUE
 from tests.fake_broker import ACCOUNT_NO
 
@@ -378,7 +379,7 @@ def test_session_bars_keep_only_the_latest_regular_session():
 def test_quote_and_technicals_use_the_same_range_and_volume_basis(client, broker, at_open, conn):
     """같은 말을 하는 숫자는 도구끼리 같다 — 기간 고저(일봉 고가·저가)와 20일 평균 거래량(오늘 제외)."""
     import asyncio
-    from app.invest import agents
+    from app.invest.debate import agents
 
     p = SampleMarket()
     s = agents.Session(conn=conn, scope={"scope": "stream", "label": "x", "candidates": [{"symbol": "005930", "name": "삼성전자"}]},

@@ -13,7 +13,7 @@ import re
 import sqlite3
 from datetime import datetime
 
-from app.invest import market
+from app.invest.marketdata import market
 
 S_POLICY = "invest_policy"
 S_HISTORY = "invest_policy_history"

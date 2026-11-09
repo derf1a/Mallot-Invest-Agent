@@ -15,10 +15,11 @@ import sqlite3
 from collections.abc import Iterable
 from concurrent.futures import ThreadPoolExecutor
 
-from app.invest import config, policy, screening, trading
-from app.invest.market import MarketError
-from app.invest.toss import TossError
-from app.invest.trading import TradeError
+from app.invest.analysis import policy, screening
+from app.invest.broker import config, trading
+from app.invest.broker.toss import TossError
+from app.invest.broker.trading import TradeError
+from app.invest.marketdata.market import MarketError
 
 LOSS_FLAG = -0.07      # 평단 대비 이만큼 잃으면 — 손절 기준 점검
 GAIN_FLAG = 0.20       # 평단 대비 이만큼 벌면 — 차익 실현 점검
