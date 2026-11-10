@@ -2,6 +2,7 @@
 
 - 범위: 앱이 낸 주문(invest_orders) + 토스 계좌의 지난 체결(invest_broker_fills — 앱을 쓰기 전 · 토스 앱에서 직접 한 거래).
   토스 체결은 import_broker 가 끝난 주문(GET /orders?status=CLOSED)을 쪽마다 받아 쌓는다 — 처음엔 끝까지, 그 뒤엔 새것만.
+  .env 의 MIA_TRADES_SINCE(YYYY-MM-DD)가 있으면 그날부터의 체결만 받고, 그 전 것은 받지도 남기지도 않는다(이미 있으면 지운다).
   앱 주문과 같은 토스 주문 번호면 앱 주문 하나로 보이고(체결가가 비었으면 토스 값으로 채움), 나머지는 source='toss' 로 시각순에 끼운다.
 
 - 금액 = 체결 수량 × 체결 평균가. 지금 가치 = 체결 수량 × 현재가 (시세를 못 받으면 비운다).
@@ -14,11 +15,14 @@
 """
 
 import json
+import os
+import re
 import sqlite3
 import time
 from functools import lru_cache
 from pathlib import Path
 
+from app.core import envfile
 from app.core.db import data_dir
 from app.invest.broker import config, trading
 from app.invest.broker.toss import TossClient, TossError
@@ -31,7 +35,8 @@ QUOTE_CHUNK = 20     # 현재가는 이만큼씩 나눠 받는다
 EXECUTOR = "trader"  # 트레이더 의견은 decision 으로 따로 보여준다
 IMPORT_PAGES = 50    # 토스 끝난 주문을 한 번에 받는 최대 쪽 수 (한 쪽 100건)
 IMPORT_EVERY = 60    # 토스 체결 가져오기는 이 초마다 한 번 (화면을 새로 고칠 때마다 부르지 않게)
-S_IMPORTED = "invest_broker_fills_complete"  # 끝 쪽까지 한 번 받았나 — 아니면 다음에도 끝까지
+S_IMPORTED = "invest_broker_fills_complete"  # 어느 시작일로 끝 쪽까지 받았나 ('all' 또는 YYYY-MM-DD) — 다르면 다시 끝까지
+SINCE_ENV = "MIA_TRADES_SINCE"
 _last_import = 0.0
 
 ORDER_SQL = """
@@ -90,6 +95,25 @@ def _fill_row(o: dict) -> tuple | None:
             o.get("status") or "")
 
 
+def since() -> str | None:
+    """거래 기록 시작일 (YYYY-MM-DD) — .env 를 부를 때마다 읽는다. 없거나 형식이 틀리면 None(전부)."""
+    raw = (envfile.read().get(SINCE_ENV) or os.environ.get(SINCE_ENV) or "").strip()
+    return raw if re.fullmatch(r"\d{4}-\d{2}-\d{2}", raw) else None
+
+
+def _when(o: dict) -> str:
+    return str((o.get("execution") or {}).get("filledAt") or o.get("orderedAt") or "")
+
+
+def purge_before(conn: sqlite3.Connection, day: str | None) -> int:
+    """시작일 전 토스 체결을 지운다 → 지운 수."""
+    if not day:
+        return 0
+    n = conn.execute("DELETE FROM invest_broker_fills WHERE COALESCE(filled_at, ordered_at, '') < ?", (day,)).rowcount
+    conn.commit()
+    return n
+
+
 def import_broker(conn: sqlite3.Connection, client=None, *, force: bool = False) -> int:
     """토스 계좌의 끝난 주문에서 체결을 받아 쌓는다 → 새로 쌓은 수. 처음(또는 끝까지 못 받았으면) 끝 쪽까지, 그 뒤엔 아는 주문이 나올 때까지.
     주문을 내지 않는 조회만 한다. 토스 키가 없거나 IMPORT_EVERY 초 안에 다시 부르면 건너뛴다."""
@@ -100,12 +124,17 @@ def import_broker(conn: sqlite3.Connection, client=None, *, force: bool = False)
         return 0
     _last_import = time.monotonic()
     client = client or TossClient()
+    day = since()
+    purge_before(conn, day)
     known = {r[0] for r in conn.execute("SELECT broker_order_id FROM invest_broker_fills")}
     row = conn.execute("SELECT value FROM settings WHERE key = ?", (S_IMPORTED,)).fetchone()
-    full = not (row and row[0] == "true")
+    mark = day or "all"
+    full = not (row and row[0] == mark)
     added, cursor = 0, None
     for _ in range(IMPORT_PAGES):
         orders, cursor = client.closed_orders_page(cursor)
+        older = bool(day) and any(_when(o) < day for o in orders)  # 최근 것부터 오니 시작일 전이 나오면 끝
+        orders = [o for o in orders if not day or _when(o) >= day]
         fresh = [o for o in orders if str(o.get("orderId")) not in known]
         for o in fresh:
             rec = _fill_row(o)
@@ -115,10 +144,10 @@ def import_broker(conn: sqlite3.Connection, client=None, *, force: bool = False)
                 known.add(rec[0])
                 added += 1
         conn.commit()
-        if cursor is None:
+        if cursor is None or older:
             if full:
-                conn.execute("INSERT INTO settings (key, value) VALUES (?, 'true') ON CONFLICT(key) DO UPDATE SET value = 'true'",
-                             (S_IMPORTED,))
+                conn.execute("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                             (S_IMPORTED, mark))
                 conn.commit()
             break
         if not full and len(fresh) < len(orders):
@@ -156,13 +185,14 @@ def history(conn: sqlite3.Connection, p=None) -> dict:
     except (MarketError, TossError):
         pass  # 받아 둔 것만으로 보여준다
     p = p or market.provider()
+    day = since()
     rows = [dict(r) for r in conn.execute(ORDER_SQL).fetchall()]  # 단가는 처음부터 쌓아야 맞다 — 자르는 건 보여줄 때
     outside, fills = _broker_rows(conn, {r["broker_order_id"] for r in rows if r["broker_order_id"]}, p)
     for r in rows:
         f = fills.get(r["broker_order_id"] or "")
         if f and not r["avg_fill_price"]:
             r["avg_fill_price"] = f["price"]
-    rows = sorted(rows + outside, key=lambda o: (_at(o), o["id"]))
+    rows = sorted((r for r in rows + outside if not day or _at(r) >= day), key=lambda o: (_at(o), o["id"]))
     now = _prices(p, sorted({r["symbol"] for r in rows}))
     book: dict[str, dict] = {}
     trades: list[dict] = []

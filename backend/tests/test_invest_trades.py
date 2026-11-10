@@ -177,3 +177,25 @@ def test_history_includes_past_broker_fills_with_their_prices(conn, monkeypatch)
     assert h["trades"][1]["at"] == "2025-02-01 10:00:00" and h["trades"][1]["id"] < 0 and h["trades"][1]["pnl"] == 5 * 150 - 550
     s = h["symbols"][0]
     assert (s["buy_count"], s["sell_count"], s["held_quantity"], s["unknown_sold"]) == (2, 1, 6, 0)
+
+
+def test_since_keeps_only_trades_from_that_day(conn, monkeypatch):  # noqa: F811
+    """MIA_TRADES_SINCE 전 체결은 받지 않고, 이미 있던 것은 지우고, 화면에도 안 보인다."""
+    trades.import_broker(conn, Closed([_closed("t3", "005930", "buy", 1, 120, "2026-10-30T09:10:00+09:00"),
+                                       _closed("t2", "005930", "buy", 1, 110, "2026-10-29T15:00:00+09:00")]), force=True)
+    assert conn.execute("SELECT count(*) FROM invest_broker_fills").fetchone()[0] == 2
+    monkeypatch.setattr(trades.envfile, "read", lambda: {trades.SINCE_ENV: "2026-10-30"})
+    fake = Closed([_closed("t4", "005930", "sell", 1, 130, "2026-11-02T10:00:00+09:00"),
+                   _closed("t3", "005930", "buy", 1, 120, "2026-10-30T09:10:00+09:00"),
+                   _closed("t2", "005930", "buy", 1, 110, "2026-10-29T15:00:00+09:00"),
+                   _closed("t1", "005930", "buy", 1, 100, "2026-10-01T10:00:00+09:00")])
+    assert trades.import_broker(conn, fake, force=True) == 1 and fake.pages == 2         # 시작일 전이 나온 쪽에서 멈춤
+    ids = [r[0] for r in conn.execute("SELECT broker_order_id FROM invest_broker_fills ORDER BY broker_order_id")]
+    assert ids == ["t3", "t4"]                                                              # t2 는 지워지고 t1 은 받지 않음
+    _fill(conn, "000660", "buy", 1, 200)                                                    # 앱 주문 (2026-11-10)
+    conn.execute("UPDATE invest_orders SET filled_at = '2026-10-20T10:00:00+09:00'")
+    conn.commit()
+    monkeypatch.setattr(trades, "import_broker", lambda *a, **k: 0)
+    h = trades.history(conn, Quotes({}))
+    assert [t["at"][:10] for t in h["trades"]] == ["2026-11-02", "2026-10-30"]
+    assert h["trades"][0]["basis_price"] == 120                                             # 시작일 뒤 매수로만 단가
