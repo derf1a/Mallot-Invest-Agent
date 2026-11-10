@@ -37,6 +37,20 @@ def test_check_turns_facts_into_sell_signals():
     assert exits.check(H, None)["flags"] == [{"key": "loss", "text": "손실 -10.0%"}]               # 일봉이 없어도 손익 신호는
 
 
+def test_ma_alignment_reports_price_position():
+    """신세계 I&C 경우 — 선 순서는 역배열인데 종가는 모든 선 위(급반등). 판정은 그대로 두고 엇갈림을 알린다."""
+    from app.invest.marketdata import indicators
+    rebound = indicators.alignment(120, 100, 105, 110)
+    assert rebound == {"trend": -1, "label": "역배열", "price_vs_ma": "above_all",
+                       "note": "역배열이지만 종가는 5·20·60일선 모두 위 — 반등 중, 선 순서는 아직 안 바뀜"}
+    assert indicators.alignment(90, 100, 105, 110)["note"] is None                  # 진짜 하락
+    assert indicators.alignment(90, 110, 105, 100)["note"].startswith("정배열이지만")
+    assert indicators.alignment(104, 100, 105, 110)["price_vs_ma"] == "between" and indicators.alignment(None, 1, 2, 3) is None
+    up = exits.check({**H, "last_price": 101_000, "pnl_rate": 0.01, "weight": 0.1},
+                     {**M, "trend": -1, "price_vs_ma": "above_all", "drawdown": -0.02, "rsi": 55}, 30)
+    assert [f["text"] for f in up["flags"] if f["key"] == "downtrend"] == ["이동평균 역배열 (종가는 모든 선 위 — 반등 중)"]
+
+
 def test_position_limit_takes_the_stricter_one(conn):  # noqa: F811
     assert exits.position_limit(conn) == 30.0                                                     # 주문 한도 기본값
     policy.save(conn, {"max_position": 20}, by="test")

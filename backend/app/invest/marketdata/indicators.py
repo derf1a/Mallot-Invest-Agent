@@ -97,3 +97,20 @@ def summary(closes: list[float], volumes: list[float] | None = None) -> dict:
         avg20 = sum(volumes[-21:-1]) / 20
         out["volume_vs_20d_avg"] = r(volumes[-1] / avg20, 2) if avg20 else None
     return out
+
+
+ALIGN_KO = {1: "정배열", -1: "역배열", 0: "혼조"}
+
+
+def alignment(close: float | None, ma5: float | None, ma20: float | None, ma60: float | None) -> dict | None:
+    """이동평균 정렬 — 판정(trend)은 5·20·60일선의 순서만 본다(정배열 5>20>60 · 역배열 5<20<60 · 그 밖 혼조).
+    선 순서는 늦게 바뀌어서, 급반등하면 종가가 모든 선 위인데도 역배열로 남는다 — 그래서 종가 위치(price_vs_ma)와
+    둘이 엇갈릴 때의 설명(note)을 같이 준다. 값이 하나라도 없으면 None."""
+    if not (close and ma5 and ma20 and ma60):
+        return None
+    trend = 1 if ma5 > ma20 > ma60 else -1 if ma5 < ma20 < ma60 else 0
+    mas = (ma5, ma20, ma60)
+    pos = "above_all" if all(close > m for m in mas) else "below_all" if all(close < m for m in mas) else "between"
+    note = ("역배열이지만 종가는 5·20·60일선 모두 위 — 반등 중, 선 순서는 아직 안 바뀜" if trend == -1 and pos == "above_all" else
+            "정배열이지만 종가는 5·20·60일선 모두 아래 — 꺾이는 중, 선 순서는 아직 안 바뀜" if trend == 1 and pos == "below_all" else None)
+    return {"trend": trend, "label": ALIGN_KO[trend], "price_vs_ma": pos, "note": note}

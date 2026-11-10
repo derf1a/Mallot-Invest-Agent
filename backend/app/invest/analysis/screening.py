@@ -119,12 +119,12 @@ def metrics(p, symbol: str) -> dict | None:
     if len(closes) < 21:
         return None
     s = indicators.summary(closes, [c["v"] for c in cs])
-    ma5, ma20, ma60 = s.get("ma5"), s.get("ma20"), s.get("ma60")
-    trend = 0
-    if ma5 and ma20 and ma60:
-        trend = 1 if ma5 > ma20 > ma60 else -1 if ma5 < ma20 < ma60 else 0
+    ma20, ma60 = s.get("ma20"), s.get("ma60")
+    al = indicators.alignment(closes[-1], s.get("ma5"), ma20, ma60)
+    trend = al["trend"] if al else 0
     return {"price": closes[-1], "change_1d": round(closes[-1] / closes[-2] - 1, 4), "change_5d": s.get("return_5d"),
             "change_20d": s.get("return_20d"), "volume_ratio": s.get("volume_vs_20d_avg"), "rsi": s.get("rsi14"), "trend": trend,
+            "price_vs_ma": al["price_vs_ma"] if al else None,
             "drawdown": round(closes[-1] / max(closes) - 1, 4), "uptrend": bool(ma20 and ma60 and ma20 > ma60), "ma20": ma20}
 
 
