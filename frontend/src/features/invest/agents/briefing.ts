@@ -52,7 +52,7 @@ export const toneOf = (v: number | null | undefined): Tone => (v === null || v =
 /** '2026-10-30 09:08' → '10/30 09:08', 날짜만이면 시작점 */
 export const pointLabel = (at: string) => (at.length <= 10 ? `${at.slice(5).replace('-', '/')} 시작` : `${at.slice(5, 10).replace('-', '/')} ${at.slice(11, 16)}`)
 const SIDE: Record<string, string> = { buy: '매수', sell: '매도' }
-const RUN: Record<string, string> = { succeeded: '끝남', cancelled: '중지', failed: '실패', running: '진행 중', queued: '대기' }
+const RUN: Record<string, string> = { succeeded: '끝남', cancelled: '중지', failed: '실패', running: '진행 중', queued: '대기', interrupted: '중단(서버 재시작)' }
 
 /** 추이 — 날짜가 바뀌는 점에만 축 글자, 많으면 고른 간격으로 MAX_TICKS 개 */
 const MAX_TICKS = 5

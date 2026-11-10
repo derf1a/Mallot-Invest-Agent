@@ -39,6 +39,9 @@ class JobSpec:
     run: Callable[["RunContext", dict], dict]
     defaults: dict = field(default_factory=dict)
     uses_llm: bool = False
+    # 서버 재시작으로 끊긴 실행을 정리할 때 부른다 (conn, 실행 dict) → 그때까지의 요약(summary_json) 또는 None.
+    # 끊긴 실행도 그때까지 한 일(예: 낸 주문)이 남아 있어서 — 비우면 '아무 일도 없었다'로 읽힌다.
+    on_interrupted: Callable[[sqlite3.Connection, dict], dict | None] | None = None
 
 
 REGISTRY: dict[str, JobSpec] = {}
@@ -201,12 +204,28 @@ INTERRUPTED = "서버가 재시작되어 중단됨"  # 실행 자체의 실패�
 
 
 def recover_interrupted(conn: sqlite3.Connection) -> int:
-    """서버가 꺼질 때 돌고 있던 실행을 실패로 정리한다 (시작 시 호출)."""
+    """서버가 꺼질 때 돌고 있던 실행을 실패(error=INTERRUPTED)로 정리한다 (시작 시 호출).
+    작업에 on_interrupted 가 있으면 그때까지의 요약을 남긴다 — 예전에 요약 없이 끊긴 실행도 같이 채운다."""
     cur = conn.execute(
         "UPDATE runs SET status = 'failed', error = ?, "
         "finished_at = datetime('now', 'localtime') WHERE status IN ('queued', 'running')", (INTERRUPTED,)
     )
     conn.commit()
+    hooks = {k: s.on_interrupted for k, s in REGISTRY.items() if s.on_interrupted}
+    if hooks:
+        marks = ",".join("?" * len(hooks))
+        rows = conn.execute(f"SELECT r.*, NULL AS dataset_name, NULL AS parent_name FROM runs r WHERE status = 'failed' AND error = ? "
+                            f"AND summary_json IS NULL AND kind IN ({marks})", (INTERRUPTED, *hooks)).fetchall()
+        for row in rows:
+            run = run_dict(row)
+            try:
+                summary = hooks[run["kind"]](conn, run)
+            except Exception:  # noqa: BLE001 — 요약을 못 남겨도 서버는 뜬다
+                log.exception("끊긴 실행 #%s 요약 실패", run["id"])
+                continue
+            if summary is not None:
+                conn.execute("UPDATE runs SET summary_json = ? WHERE id = ?", (json.dumps(summary, ensure_ascii=False), run["id"]))
+        conn.commit()
     return cur.rowcount
 
 

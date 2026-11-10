@@ -267,7 +267,8 @@ def _context(conn: sqlite3.Connection, msg_id: int, header: str = "관리자의 
             except ValueError:
                 s = {}
             orders = ", ".join(f"{o['name']} {o['side']} {o['quantity']:g}주 {o['status']}" for o in s.get("orders") or []) or "주문 없음"
-            out.append(f"- #{r['id']} {r['name']} · {r['status']} · 게이트 {s.get('gate', '-')} · {orders}")
+            status = "중단(서버 재시작 — 실패 아님)" if s.get("interrupted") else r["status"]
+            out.append(f"- #{r['id']} {r['name']} · {status} · 게이트 {s.get('gate', '-')} · {orders}")
         lines.append("최근 판단:\n" + "\n".join(out))
     research = desk.brief(conn, now.date())
     lines.append("오늘 리서치: " + (f"\n{research}" if research else "아직 없음"))
