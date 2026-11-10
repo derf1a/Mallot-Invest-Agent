@@ -60,8 +60,9 @@ def check(h: dict, m: dict | None, limit_pct: float | None = None) -> dict:
         flags.append({"key": "drawdown", "text": f"60일 고점 대비 {_pct(dd)}"})
     if gap is not None and gap < 0:
         flags.append({"key": "ma20", "text": f"20일선 아래 {_pct(gap)}"})
-    if m.get("trend") == -1:
-        flags.append({"key": "downtrend", "text": "이동평균 역배열"})
+    if m.get("trend") == -1:  # 급반등으로 종가가 모든 선 위면 그렇다고 적는다 — '역배열'만 보고 하락 중으로 읽지 않게
+        flags.append({"key": "downtrend", "text": "이동평균 역배열 (종가는 모든 선 위 — 반등 중)" if m.get("price_vs_ma") == "above_all"
+                      else "이동평균 역배열"})
     if rsi is not None and rsi >= HOT_RSI:
         flags.append({"key": "hot", "text": f"RSI {rsi:.0f} 과열"})
     if limit_pct and weight is not None and weight * 100 > limit_pct:

@@ -212,10 +212,11 @@ def _handlers(s: Session) -> dict[str, Callable[[dict], Awaitable[object]]]:
         out = indicators.summary([c["c"] for c in cs], [c["v"] for c in cs])
         if cs:  # 기간 고저는 종가가 아니라 일봉 고가·저가로 — get_quote 의 range_high·range_low 와 같은 값
             out.update(high_in_range=max(c["h"] for c in cs), low_in_range=min(c["l"] for c in cs))
-        ma = {k: out.get(k) for k in ("ma5", "ma20", "ma60")}
-        if all(ma.values()):
-            out["ma_alignment"] = ("정배열" if ma["ma5"] > ma["ma20"] > ma["ma60"] else
-                                   "역배열" if ma["ma5"] < ma["ma20"] < ma["ma60"] else "혼조")
+        al = indicators.alignment(out.get("last_close"), out.get("ma5"), out.get("ma20"), out.get("ma60"))
+        if al:  # 정렬은 선 순서만 — 종가 위치와 엇갈리면 note 로 알린다 (급반등 직후 '역배열'이 헷갈리지 않게)
+            out.update(ma_alignment=al["label"], ma_alignment_rule="5·20·60일선의 순서만 봄", price_vs_ma=al["price_vs_ma"])
+            if al["note"]:
+                out["ma_alignment_note"] = al["note"]
         return {"symbol": sym, **out, "data_source": _source(p)}
 
     async def get_intraday(a: dict) -> dict:
