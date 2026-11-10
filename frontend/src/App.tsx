@@ -9,6 +9,7 @@ import { ReadOnlyContext } from './shared/readOnly'
 // 화면마다 처음 열 때 불러온다 — 첫 화면 번들을 작게
 const Invest = lazy(() => import('./features/invest/InvestPage'))
 const Portfolio = lazy(() => import('./features/invest/PortfolioPage'))
+const Trades = lazy(() => import('./features/invest/TradesPage'))
 const AiTrading = lazy(() => import('./features/invest/AiTradingPage'))
 const Team = lazy(() => import('./features/invest/TeamPage'))
 const Settings = lazy(() => import('./features/settings/SettingsPage'))
@@ -59,6 +60,7 @@ function MainApp({ onLogout, viewer }: { onLogout?: () => void; viewer?: ViewerA
         <Route index element={<Navigate to="/invest/ai" replace />} />
         <Route path="invest" element={page(<Invest />)} />
         <Route path="invest/portfolio" element={page(<Portfolio />)} />
+        <Route path="invest/trades" element={page(<Trades />)} />
         <Route path="invest/ai" element={page(<AiTrading />)} />
         <Route path="invest/team" element={page(<Team />)} />
         <Route path="observe/agents" element={page(<Agents />)} />

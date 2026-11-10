@@ -350,3 +350,39 @@ label.check.halt { margin-top: 6px; padding: 8px 10px; border-radius: 8px; backg
 .weights-share { display: inline-flex; align-items: center; gap: 8px; min-width: 120px; }
 .weights-bar { display: inline-block; height: 8px; max-width: 70px; min-width: 2px; border-radius: 4px; background: var(--accent); }
 .weights-share > .weights-bar { flex: 0 0 auto; }
+
+/* 거래 기록 (TradesPage · trades/TradeDebate) */
+.trades-page .tile-row { margin-bottom: 0; }
+.trades-filters { display: inline-flex; flex-wrap: wrap; gap: 8px; }
+.trades-page .section-head { flex-wrap: wrap; row-gap: 8px; margin-bottom: 8px; }
+.trades-table tbody tr.trade-row { cursor: pointer; }
+.trades-table tbody tr.trade-row:hover th, .trades-table tbody tr.trade-row:hover td,
+.trades-table tbody tr.trade-row.open th, .trades-table tbody tr.trade-row.open td { background: var(--surface); }
+.trades-table tbody tr.trade-row.open th, .trades-table tbody tr.trade-row.open td { border-bottom-color: transparent; }
+button.trade-toggle { display: inline-flex; align-items: center; gap: 6px; border: none; background: none; padding: 0; color: inherit;
+  font: inherit; font-weight: 600; text-align: left; min-height: 28px; cursor: pointer; }
+button.trade-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+.trade-caret { width: 10px; color: var(--muted); font-size: 0.75rem; }
+.trades-table tr.trade-detail > td { padding: 0 0 12px; text-align: left; white-space: normal; background: var(--surface); }
+.trade-debate { position: sticky; left: 0; box-sizing: border-box; width: min(100%, calc(100vw - 72px)); max-width: 880px;
+  display: flex; flex-direction: column; gap: 12px; padding: 4px 12px 0; }
+.trade-debate p { margin: 0; line-height: 1.55; }
+.trade-debate-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.trade-debate-title { margin: 0 0 6px; font-size: 0.85rem; display: flex; align-items: baseline; gap: 8px; }
+.trade-gate p + p { margin-top: 2px; }
+.trade-gate-bar { display: flex; height: 8px; max-width: 360px; border-radius: 4px; overflow: hidden; background: var(--border); margin-bottom: 6px; }
+.trade-gate-bar i { display: block; height: 100%; }
+.trade-gate-bar i.buy { background: var(--up); }
+.trade-gate-bar i.sell { background: var(--down); }
+.trade-debate .up { color: var(--up); }
+.trade-debate .down { color: var(--down); }
+.trade-opinions { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.trade-opinion { display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: start; }
+.trade-opinion.against { opacity: 0.85; }
+.trade-opinion-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 2px; }
+.trade-conf { display: inline-flex; align-items: center; gap: 4px; }
+.trade-debate .conf { background: var(--border); }
+.trade-rationale { white-space: pre-wrap; }
+.trade-risks { margin: 6px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px; }
+.trade-checks summary { cursor: pointer; color: var(--muted); }
+.trade-checks ul { margin: 6px 0 0; padding-left: 18px; }

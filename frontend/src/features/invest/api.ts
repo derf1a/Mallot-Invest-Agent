@@ -971,6 +971,45 @@ async function request<T>(method: string, url: string, body?: unknown, retried =
 
 const enc = encodeURIComponent
 
+/** 거래 기록 — 체결된 주문 하나 (백엔드 invest/ops/trades.py) */
+export interface Trade {
+  id: number; at: string; symbol: string; name: string; currency: string; side: Side; order_type: 'market' | 'limit'
+  status: OrderStatus; quantity: number; price: number | null; amount: number | null
+  now_price: number | null; now_value: number | null; source: 'manual' | 'agent'; run_id: number | null; run_name: string | null
+  reason: string
+  /** 매수: 지금 가치 − 매수 금액 */
+  pnl?: number | null; pnl_rate?: number | null
+  /** 매도: 단가(토스 평단 또는 앞선 매수의 이동평균)로 낸 실현 손익 */
+  basis_price?: number | null; basis_quantity?: number; basis_from?: 'broker' | 'history' | null
+  realized?: number | null; realized_rate?: number | null
+  /** 매도: 판 수량의 지금 가치 − 매도 금액 (+ 면 판 뒤에 올랐다) */
+  after?: number | null; after_rate?: number | null
+}
+export interface TradeSymbol {
+  symbol: string; name: string; currency: string; buy_count: number; sell_count: number
+  bought: number; sold: number; realized: number; known_sells: number; unknown_sold: number
+  held_quantity: number; held_cost: number; now_price: number | null; held_value: number | null; unrealized: number | null
+}
+export interface TradeHistory {
+  trades: Trade[]
+  symbols: TradeSymbol[]
+  totals: { trades: number; buys: number; sells: number; bought: number; sold: number; realized: number; known_sells: number
+            held_cost: number; held_value: number | null; unrealized: number | null; priced: boolean; other_currency: number }
+  quoted: boolean
+}
+export interface TradeOpinion {
+  agent: string; title: string; at: string | null; round: number | null; stance: Stance; confidence: number | null
+  reason: string; changed: boolean
+}
+export interface TradeDebate {
+  order_id: number; symbol: string; side: Side; source: 'manual' | 'agent'; reason: string; checks: string[]
+  run_id: number | null; run_name: string | null; run_at: string | null; found: boolean; agenda: string | null
+  gate: { at: string | null; mode: string | null; status: string | null; direction: Side | null
+          counts: { buy: number; sell: number; none: number } | null; weights: { buy: number; sell: number } | null; reason: string } | null
+  decision: { at: string | null; title: string | null; rationale: string; risk_notes: string[]; decision: string | null; quantity: number | null } | null
+  opinions: TradeOpinion[]
+}
+
 export const investApi = {
   status: () => request<InvestStatus>('GET', '/api/invest/status'),
   config: () => request<InvestConfig>('GET', '/api/invest/config'),
@@ -1086,6 +1125,8 @@ export const investApi = {
   runResearch: (note = '') => request<{ id: number }>('POST', '/api/invest/desk/research', { note }),
 
   performance: () => request<Performance>('GET', '/api/invest/performance'),
+  trades: () => request<TradeHistory>('GET', '/api/invest/trades'),
+  tradeDebate: (id: number) => request<TradeDebate>('GET', `/api/invest/trades/${id}/debate`),
   saveBaseline: (contributions: Baseline['contributions']) => request<Baseline>('PUT', '/api/invest/baseline', { contributions }),
   addContribution: (c: { date: string; amount: number; note?: string }) => request<Baseline>('POST', '/api/invest/baseline/contributions', c),
   briefing: () => request<Briefing & { text: string }>('GET', '/api/invest/briefing'),
