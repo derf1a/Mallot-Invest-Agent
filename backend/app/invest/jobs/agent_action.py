@@ -21,6 +21,7 @@ import threading
 from datetime import datetime
 
 from app.core import trace
+from app.core.db import data_dir
 from app.invest.analysis import exits, policy, screening
 from app.invest.broker import config
 from app.invest.broker.toss import TossError
@@ -366,6 +367,37 @@ def _plan_next(ctx: RunContext, p, model: str | None, result: agents.SessionResu
     return res
 
 
+SIDE_KO = {"buy": "매수", "sell": "매도"}
+
+
+def interrupted_summary(conn, run: dict) -> dict:
+    """서버 재시작으로 끊긴 토론·상시 운용 — 그때까지 낸 주문(지금 상태)으로 요약을 남기고 채팅방에 끝 줄을 단다 (runner.recover_interrupted).
+    '실패 · 주문 없음'으로 읽히지 않게. LLM 없이 코드로만 — 서버가 뜨는 중이라."""
+    params = run.get("params") or {}
+    orders = [dict(r) for r in conn.execute("SELECT id, symbol, name, side, quantity, status FROM invest_orders WHERE run_id = ? ORDER BY id",
+                                             (run["id"],))]
+    filled = [o for o in orders if o["status"] in ("filled", "partial")]
+    what = "상시 운용" if params.get("stream") else "토론"
+    names = ", ".join(f"{o['name'] or o['symbol']} {SIDE_KO.get(o['side'], o['side'])}" for o in filled)
+    headline = f"서버 재시작으로 {what}이 끊김 — " + (f"그때까지 주문 {len(orders)}건(체결 {len(filled)}건)" if orders else "낸 주문 없음")
+    detail = (f"{run['started_at'] or run['created_at']}에 시작해 {run['finished_at'] or '-'}에 서버가 다시 켜지며 멈췄어요. "
+              + (f"체결: {names}." if filled else "체결된 주문은 없어요.") + " 회의록은 만들지 못했어요.")
+    folder = data_dir() / run["artifact_path"] if run.get("artifact_path") else None
+    if folder and (folder / MESSAGES).exists():  # 채팅방이 '진행 중'으로 남지 않게 끝 줄을 단다
+        path = folder / MESSAGES
+        seq = sum(1 for _ in path.open(encoding="utf-8")) + 1
+        with path.open("a", encoding="utf-8") as f:
+            f.write(json.dumps({"seq": seq, "ts": datetime.now().strftime("%H:%M:%S"), "type": "end", "status": "failed",
+                                "message": headline}, ensure_ascii=False) + "\n")
+    return {"scope": "stream" if params.get("stream") else params.get("scope"), "label": run["name"], "name": run["name"],
+            "stream": bool(params.get("stream")), "autopilot": bool(params.get("autopilot")), "interrupted": True, "end": "interrupted",
+            "gate": "aligned" if orders else "no_view",
+            "orders": [{k: o[k] for k in ("id", "symbol", "name", "side", "quantity", "status")} for o in orders],
+            "order_id": orders[0]["id"] if orders else None, "order_status": orders[0]["status"] if orders else None,
+            "minutes": {"headline": headline, "summary": detail,
+                        "kind": MEETING_KIND.get(str(params.get("trigger") or ""), "수동 회의")}}
+
+
 register(JobSpec(
     kind="agent_action",
     title="에이전틱 매매",
@@ -374,4 +406,5 @@ register(JobSpec(
     run=run,
     defaults=DEFAULTS,
     uses_llm=True,
+    on_interrupted=interrupted_summary,
 ))

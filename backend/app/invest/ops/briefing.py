@@ -49,7 +49,8 @@ WORKERS = 4      # 보유 종목 오늘 등락을 동시에 받는 수
 SIDE_KO = {"buy": "매수", "sell": "매도"}
 ORDER_KO = {"pending_approval": "승인 대기", "open": "미체결", "partial": "부분 체결", "filled": "체결", "cancelled": "취소",
             "rejected": "거절", "failed": "확인 필요"}
-RUN_KO = {"succeeded": "끝남", "cancelled": "중지", "failed": "실패", "running": "진행 중", "queued": "대기"}
+RUN_KO = {"succeeded": "끝남", "cancelled": "중지", "failed": "실패", "running": "진행 중", "queued": "대기",
+          "interrupted": "중단(서버 재시작)"}
 S_BASELINE = "invest_baseline"
 MAX_CONTRIBUTIONS = 50
 _DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -283,7 +284,8 @@ def _meetings(conn: sqlite3.Connection, ai: dict, limit: int = MEETINGS) -> list
                           if not issues.is_note(str(x))][:2]
             except ValueError:
                 pass
-        out.append({"id": r["id"], "name": r["name"], "status": r["status"], "at": r["created_at"][:16], "kind": mins.get("kind"),
+        status = "interrupted" if s.get("interrupted") else r["status"]  # 서버 재시작으로 끊김 — 실패와 가른다
+        out.append({"id": r["id"], "name": r["name"], "status": status, "at": r["created_at"][:16], "kind": mins.get("kind"),
                     "headline": issues.strip_headline(mins.get("headline")) or None, "summary": short(issues.strip_notes(mins.get("summary"))), "follow_up": follow,
                     "orders": orders,
                     "live": _live(folder) if running and folder else None})

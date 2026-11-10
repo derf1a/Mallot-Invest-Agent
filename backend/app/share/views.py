@@ -85,7 +85,8 @@ def sessions(conn: sqlite3.Connection, limit: int = 20) -> list[dict]:
     out = []
     for r in runs:
         summary = r.get("summary") or {}
-        out.append({"id": r["id"], "name": r["name"], "status": r["status"], "created_at": r["created_at"],
+        status = "interrupted" if summary.get("interrupted") else r["status"]  # 서버 재시작으로 끊김 — 실패와 가른다
+        out.append({"id": r["id"], "name": r["name"], "status": status, "created_at": r["created_at"],
                     "finished_at": r["finished_at"], "scope": (r.get("params") or {}).get("scope"),
                     "autopilot": bool((r.get("params") or {}).get("autopilot")), "minutes": summary.get("minutes"),
                     "gate": summary.get("gate"), "decision": summary.get("decision"), "orders": orders.get(r["id"], [])})

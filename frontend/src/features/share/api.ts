@@ -7,7 +7,8 @@ export interface DeskStage { day: string; at: string; data: Record<string, unkno
 export interface ShareSession {
   id: number
   name: string
-  status: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled'
+  /** interrupted = 서버 재시작으로 끊김 (runs 의 failed 중 그때까지의 요약이 남은 것) */
+  status: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled' | 'interrupted'
   created_at: string
   finished_at: string | null
   scope: string | null

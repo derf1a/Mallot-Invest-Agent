@@ -12,7 +12,7 @@ import { shareApi, type SavedReport, type ShareMessage, type ShareSession, type 
 const KIND_KO: Record<string, string> = { fixed: '정기', extra: 'AI 추가', manual: '지금 판단', risk: '리스크 경보', stream: '상시 운용' }
 const STATUS_KO: Record<string, string> = {
   pending: '예정', started: '열림', skipped: '건너뜀', missed: '놓침',
-  queued: '대기', running: '진행 중', succeeded: '끝남', failed: '실패', cancelled: '취소',
+  queued: '대기', running: '진행 중', succeeded: '끝남', failed: '실패', cancelled: '취소', interrupted: '중단(서버 재시작)',
 }
 const SIDE_KO = { buy: '매수', sell: '매도' } as const
 
