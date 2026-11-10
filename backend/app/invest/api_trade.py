@@ -1,4 +1,4 @@
-"""투자 탭 — 토스증권 실계좌(보유·매수 가능 금액), 내 투자현황(다른 계좌 수기 포함), 주문, 승인·거절·취소."""
+"""투자 탭 — 토스증권 실계좌(보유·매수 가능 금액), 내 투자현황(다른 계좌 수기 포함), 주문, 승인·거절·취소, 거래 기록."""
 
 import sqlite3
 from typing import Annotated, Literal
@@ -12,6 +12,7 @@ from app.invest.broker.trading import TradeError
 from app.invest.deps import Pin, require_pin
 from app.invest.marketdata import market
 from app.invest.marketdata.market import MarketError
+from app.invest.ops import trades
 
 router = APIRouter(prefix="/api/invest", tags=["invest"])
 Conn = Annotated[sqlite3.Connection, Depends(get_conn)]
@@ -126,6 +127,21 @@ def create_order(body: OrderIn, conn: Conn, pin: Pin = None) -> dict:
 def orders(conn: Conn, status: Literal["all", "open", "closed"] = "all", run_id: int | None = None,
            limit: Annotated[int, Query(ge=1, le=500)] = 100) -> list[dict]:
     return trading.list_orders(conn, status, limit, run_id)
+
+
+@router.get("/trades")
+def trade_history(conn: Conn) -> dict:
+    """거래 기록 — 체결된 매수 · 매도와 금액 · 지금 가치 · 손익, 종목별 · 전체 합계."""
+    return trades.history(conn)
+
+
+@router.get("/trades/{order_id}/debate")
+def trade_debate(order_id: int, conn: Conn) -> dict:
+    """이 거래를 낳은 토론 — 안건 · 입장판 결과 · 에이전트 의견 · 트레이더 판단."""
+    out = trades.debate(conn, order_id)
+    if out is None:
+        raise HTTPException(404, "주문을 찾을 수 없어요")
+    return out
 
 
 class ConfirmIn(BaseModel):
