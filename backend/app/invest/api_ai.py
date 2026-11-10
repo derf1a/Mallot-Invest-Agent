@@ -247,6 +247,13 @@ def read_autopilot(conn: Conn) -> dict:
     return autopilot.status(conn)
 
 
+@router.get("/autopilot/switch")
+def read_autopilot_switch(conn: Conn) -> dict:
+    """사이드바 표시용 — 자동 운용 켜짐 여부 · 운용 방식만 (장 운영을 묻지 않아 가볍다)."""
+    cfg = autopilot.get_config(conn)
+    return {"enabled": cfg["enabled"], "mode": cfg["mode"]}
+
+
 @router.put("/autopilot")
 def save_autopilot(body: AutopilotIn, conn: Conn, pin: Pin = None) -> dict:
     """켜기·끄기는 PIN 없이 .env 의 MIA_AUTOPILOT 을 고친다. 시각·방식 바꾸기는 주문 PIN."""

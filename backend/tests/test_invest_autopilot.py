@@ -257,6 +257,13 @@ def test_switch_lives_in_env_without_pin(client, conn, broker):
     assert client.put("/api/invest/autopilot", json={"mode": "meetings"}).status_code == 403  # 방식 바꾸기는 그대로 PIN
 
 
+def test_switch_endpoint_for_sidebar(client, broker):
+    """사이드바 표시용 — 켜짐 여부 · 방식만 가볍게."""
+    assert client.get("/api/invest/autopilot/switch").json() == {"enabled": False, "mode": "meetings"}
+    client.put("/api/invest/autopilot", json={"enabled": True})
+    assert client.get("/api/invest/autopilot/switch").json()["enabled"] is True
+
+
 # ---- 세션 ----
 MAJORITY = {"차티스트": ["buy"], "가치 투자자": ["buy"], "뉴스 애널리스트": ["buy"], "모멘텀 투자자": ["buy"],
             "포트폴리오 매니저": ["none"], "리스크 매니저": ["sell"]}  # 분석 6명: 매수 4(과반) · 반대 1(허용 1)
