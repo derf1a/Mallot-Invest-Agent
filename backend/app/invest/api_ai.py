@@ -308,6 +308,16 @@ def run_autopilot_now(conn: Conn, pin: Pin = None) -> dict:
     return _run(conn, run_id)
 
 
+@router.post("/autopilot/resume", status_code=201)
+def resume_autopilot(conn: Conn) -> dict:
+    """멈춘 상시 운용 채널 다시 열기 — 켜기·끄기처럼 PIN 없이 (관리자만, 손님은 guard 가 막는다)."""
+    try:
+        run_id = autopilot.resume_stream(conn)
+    except autopilot.AutopilotError as e:
+        raise HTTPException(e.status, str(e)) from None
+    return _run(conn, run_id)
+
+
 # ---- 수익률 · 보고서 ----
 @router.get("/performance")
 def read_performance(conn: Conn) -> dict:

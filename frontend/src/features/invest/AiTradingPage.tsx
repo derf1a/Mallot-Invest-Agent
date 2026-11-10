@@ -128,9 +128,9 @@ export default function AiTrading() {
   const actions = (
     <>
       <button className={`room-action${panel === 'autopilot' ? ' on' : ''}`} onClick={() => toggle('autopilot')} aria-expanded={panel === 'autopilot'}
-        aria-label={`자동 운용 ${pilot?.config.enabled ? '켜짐' : '꺼짐'}`} title={pilot?.config.enabled ? `자동 운용 켜짐${pilot.next ? ` · 다음 ${pilot.next.time}` : ''}` : '자동 운용 꺼짐'}>
+        aria-label={`자동 운용 ${pilot?.config.enabled ? '켜짐' : '꺼짐'}`} title={pilot?.config.enabled ? `자동 운용 켜짐${pilot.next ? ` · 다음 ${pilot.next.time}` : ''}${pilot.stream?.state === 'stopped' ? ' · 채널 멈춤 — 눌러서 재개' : ''}` : '자동 운용 꺼짐'}>
         <ClockIcon /><span className="room-action-label">자동 운용</span>
-        <span className={`pilot-dot${pilot?.config.enabled ? ' on' : ''}`} aria-hidden />
+        <span className={`pilot-dot${pilot?.config.enabled ? (pilot.stream?.state === 'stopped' ? ' halted' : ' on') : ''}`} aria-hidden />
       </button>
       <div className="room-menu-wrap">
         <button className={`room-action${panel === 'sessions' ? ' on' : ''}`} onClick={() => toggle('sessions')} aria-expanded={panel === 'sessions'}

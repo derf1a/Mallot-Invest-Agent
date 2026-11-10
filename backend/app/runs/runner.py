@@ -197,11 +197,14 @@ def _finish(conn: sqlite3.Connection, run_id: int, status: str, summary: dict | 
     conn.commit()
 
 
+INTERRUPTED = "서버가 재시작되어 중단됨"  # 실행 자체의 실패와 가르는 데 쓴다 (자동 운용이 다시 열기 횟수에서 뺀다)
+
+
 def recover_interrupted(conn: sqlite3.Connection) -> int:
     """서버가 꺼질 때 돌고 있던 실행을 실패로 정리한다 (시작 시 호출)."""
     cur = conn.execute(
-        "UPDATE runs SET status = 'failed', error = '서버가 재시작되어 중단됨', "
-        "finished_at = datetime('now', 'localtime') WHERE status IN ('queued', 'running')"
+        "UPDATE runs SET status = 'failed', error = ?, "
+        "finished_at = datetime('now', 'localtime') WHERE status IN ('queued', 'running')", (INTERRUPTED,)
     )
     conn.commit()
     return cur.rowcount

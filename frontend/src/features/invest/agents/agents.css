@@ -256,6 +256,10 @@
   background: color-mix(in srgb, currentColor 14%, transparent); vertical-align: 1px; }
 .link-button { border: none; background: none; padding: 0; color: var(--accent); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
 .room-action .pilot-dot { margin-left: -2px; }
+.pilot-dot.halted { background: var(--warn); box-shadow: 0 0 0 3px color-mix(in srgb, var(--warn) 22%, transparent); }
+.pilot-stream { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; }
+.pilot-stream.stopped { border-color: color-mix(in srgb, var(--warn) 55%, var(--border)); background: color-mix(in srgb, var(--warn) 8%, transparent); }
+.pilot-stream.running b { color: var(--pos); }
 
 /* 투자 비서 */
 .msg-avatar.assistant { background: var(--accent); color: #fff; }
