@@ -11,6 +11,8 @@
   없으면 건너뛴다. 오늘 첫 회의와 마지막 정기 회의(마감 전 보유 점검), AI 가 이유를 들어 더하거나 옮긴 회의는 연다. 리서치가 돌고 있으면
   끝날 때까지 기다린다.
 - 리서치는 자동 운용이 켜져 있을 때 스스로 돌고, 꺼져 있어도 화면·비서로 지금 돌릴 수 있다(주문과 무관해 PIN 없음).
+- 데스크 설정(settings invest_desk_config, get_config·save_config): 장 전 리서치 켜기·몇 분 전, 리스크 감시 켜기·간격·급락·급등 기준,
+  경보 때 수시 회의, 시장 급변 때 리서치 다시. 화면(자동 운용 서랍)과 비서(update_desk)가 고친다. 주문은 여전히 place_order 가 검사해 PIN 없음.
 """
 
 import json
@@ -23,14 +25,23 @@ from app.runs.runner import run_dict, start_run
 
 STAGES = ("market", "sector", "ideas", "alert")
 S_STATE = "invest_desk_state"
+S_CONFIG = "invest_desk_config"
 
-PREP_MIN = 40            # 정규장 시작 이만큼 전부터 아침 리서치
+PREP_MIN = 40            # 정규장 시작 이만큼 전부터 아침 리서치 (기본값 — 설정 prep_min)
 MORNING_TRIES = 3        # 아침 리서치가 결과 없이 끝나면(서버 재시작 등) 다시 시도하는 하루 최대
 RETRY_MIN = 10           # 다시 시도하기 전 기다리는 분
-WATCH_MIN = 10           # 장 중 리스크 감시 간격
+WATCH_MIN = 10           # 장 중 리스크 감시 간격 (기본값 — 설정 watch_min)
 REFRESH_MOVE = 0.015     # 지수 등락이 아침 분석 때보다 이만큼(%p) 넘게 달라지면 리서치를 다시
 MAX_REFRESH = 2          # 장 중 다시 하는 리서치 하루 최대
 REFRESH_GAP_MIN = 60     # 리서치 사이 최소 간격
+
+# 데스크 설정 — 퍼센트 값은 사람이 읽는 % 그대로 (4.0 = 4%)
+DEFAULT_CONFIG = {"research": True, "prep_min": PREP_MIN, "watch": True, "watch_min": WATCH_MIN,
+                  "drop_pct": 4.0, "jump_pct": 6.0, "breakout_pct": 5.0, "adhoc": True, "refresh": True}
+BOUNDS = {"prep_min": (10, 120), "watch_min": (5, 60), "drop_pct": (1.0, 20.0), "jump_pct": (1.0, 30.0), "breakout_pct": (1.0, 30.0)}
+CONFIG_KO = {"research": "장 전 리서치", "prep_min": "장 시작 몇 분 전 리서치", "watch": "리스크 감시", "watch_min": "리스크 감시 간격(분)",
+             "drop_pct": "보유 급락 경보(%)", "jump_pct": "보유 급등 경보(%)", "breakout_pct": "발굴 종목 급등 경보(%)",
+             "adhoc": "경보 때 수시 회의", "refresh": "시장 급변 때 리서치 다시"}
 
 REGIME_KO = {"risk_on": "위험 선호", "neutral": "중립", "risk_off": "위험 회피"}
 CASH_KO = {"raise": "현금 늘리기", "keep": "현금 유지", "lower": "현금 줄이기"}
@@ -104,6 +115,67 @@ def alerts(conn: sqlite3.Connection, day: date) -> list[dict]:
                                           (day.isoformat(),))]
 
 
+# ---- 데스크 설정 ----
+class DeskError(Exception):
+    def __init__(self, message: str, status: int = 400):
+        super().__init__(message)
+        self.status = status
+
+
+def get_config(conn: sqlite3.Connection) -> dict:
+    row = conn.execute("SELECT value FROM settings WHERE key = ?", (S_CONFIG,)).fetchone()
+    try:
+        raw = json.loads(row["value"]) if row else {}
+    except ValueError:
+        raw = {}
+    out = dict(DEFAULT_CONFIG)
+    if isinstance(raw, dict):
+        for k, default in DEFAULT_CONFIG.items():
+            v = raw.get(k)
+            if isinstance(default, bool):
+                out[k] = v if isinstance(v, bool) else default
+            elif isinstance(v, (int, float)) and not isinstance(v, bool) and BOUNDS[k][0] <= v <= BOUNDS[k][1]:
+                out[k] = type(default)(v)
+    return out
+
+
+def save_config(conn: sqlite3.Connection, changes: dict) -> dict:
+    """바꿀 값만 받아 검사 뒤 저장한다. 모르는 항목·범위 밖이면 DeskError — 아무것도 바꾸지 않는다."""
+    cfg = get_config(conn)
+    for k, v in changes.items():
+        if v is None:
+            continue
+        if k not in DEFAULT_CONFIG:
+            raise DeskError(f"모르는 데스크 설정이에요: {k} — {', '.join(DEFAULT_CONFIG)}")
+        default = DEFAULT_CONFIG[k]
+        if isinstance(default, bool):
+            if not isinstance(v, bool):
+                raise DeskError(f"{CONFIG_KO[k]}는 켜기(true)·끄기(false)예요")
+            cfg[k] = v
+            continue
+        try:
+            num = type(default)(v)
+        except (TypeError, ValueError):
+            raise DeskError(f"{CONFIG_KO[k]}는 숫자예요") from None
+        lo, hi = BOUNDS[k]
+        if isinstance(v, bool) or not lo <= num <= hi:
+            raise DeskError(f"{CONFIG_KO[k]}는 {lo:g}~{hi:g} 사이예요")
+        cfg[k] = num
+    conn.execute("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                 (S_CONFIG, json.dumps(cfg, ensure_ascii=False)))
+    conn.commit()
+    return cfg
+
+
+def describe(cfg: dict) -> dict[str, str]:
+    """설정 한 줄씩 — 비서가 바꾼 전후를 알릴 때."""
+    return {"리서치": f"장 시작 {cfg['prep_min']}분 전" if cfg["research"] else "꺼짐",
+            "리스크 감시": (f"{cfg['watch_min']}분마다 · 보유 −{cfg['drop_pct']:g}% / +{cfg['jump_pct']:g}% · 발굴 +{cfg['breakout_pct']:g}%"
+                       if cfg["watch"] else "꺼짐"),
+            "수시 회의": "경보 때 열기" if cfg["adhoc"] else "열지 않음",
+            "급변 리서치": f"지수 ±{REFRESH_MOVE * 100:.1f}% 넘게 움직이면 (하루 {MAX_REFRESH}번)" if cfg["refresh"] else "꺼짐"}
+
+
 # ---- 그날 상태 (리서치 시작·감시 시각·이미 알린 경보·미룬 수시 회의) ----
 def state(conn: sqlite3.Connection, day: date) -> dict:
     row = conn.execute("SELECT value FROM settings WHERE key = ?", (S_STATE,)).fetchone()
@@ -128,12 +200,6 @@ def research_running(conn: sqlite3.Connection) -> dict | None:
     row = conn.execute("SELECT r.*, NULL AS dataset_name, NULL AS parent_name FROM runs r WHERE kind = 'desk_research' "
                        "AND status IN ('queued', 'running') ORDER BY id DESC LIMIT 1").fetchone()
     return run_dict(row) if row else None
-
-
-class DeskError(Exception):
-    def __init__(self, message: str, status: int = 400):
-        super().__init__(message)
-        self.status = status
 
 
 def start_research(conn: sqlite3.Connection, trigger: str = "manual", note: str = "", now: datetime | None = None) -> int:
@@ -229,6 +295,7 @@ def status(conn: sqlite3.Connection, now: datetime | None = None) -> dict:
     t = today(conn, day)
     st = state(conn, day)
     cfg = autopilot.get_config(conn)
+    dcfg = get_config(conn)
     plan = autopilot.load_plan(conn, day)
     entries = autopilot.schedule(cfg, plan)
     meetings = [e for e in entries if e["status"] == "started"]
@@ -254,15 +321,19 @@ def status(conn: sqlite3.Connection, now: datetime | None = None) -> dict:
                                + (" · 안건이 있을 때만" if cfg["flexible"] else " · 정기 시각마다")), "by": None},
         "execution": {"at": None, "text": f"오늘 AI 주문 {orders}건" + (" · 언제든" if cfg["mode"] == "continuous" else ""), "by": None},
         "risk": {"at": (st["last_watch"] or "")[:5] or None,
-                 "text": f"{WATCH_MIN}분마다 · 오늘 경보 {len(t['alerts'])}건" if cfg["enabled"] else "자동 운용이 켜지면 장 중에 살펴요",
+                 "text": ("감시 꺼짐" if not dcfg["watch"] else f"{dcfg['watch_min']}분마다 · 오늘 경보 {len(t['alerts'])}건"
+                          if cfg["enabled"] else "자동 운용이 켜지면 장 중에 살펴요"),
                  "by": None},
     }
     running = research_running(conn)
     return {"enabled": cfg["enabled"], "flexible": cfg["flexible"],
-            "people": [{**person(k), "role": PEOPLE[k]["role"]} for k in PEOPLE], "duties": DUTIES,
+            "people": [{**person(k), "role": PEOPLE[k]["role"]} for k in PEOPLE],
+            "duties": {**DUTIES, "risk": (f"장 중 {dcfg['watch_min']}분마다 보유·발굴 종목을 살피고, 급변하면 "
+                                          + ("수시 회의를 열어요" if dcfg["adhoc"] else "알려요") if dcfg["watch"] else "리스크 감시는 꺼 뒀어요")},
             "process": [{"key": k, "title": title, "who": who, **steps[k]} for k, title, who in PROCESS],
             "running": {"id": running["id"], "name": running["name"]} if running else None,
             "research": st["research"], "alerts": [{"at": a["created_at"][11:16], **a["data"]} for a in t["alerts"]],
             "market": m["data"] if m else None, "sector": s["data"] if s else None, "ideas": i["data"] if i else None,
-            "limits": {"prep_min": PREP_MIN, "watch_min": WATCH_MIN, "refresh_move": REFRESH_MOVE, "max_refresh": MAX_REFRESH,
+            "config": dcfg, "bounds": BOUNDS,
+            "limits": {"prep_min": dcfg["prep_min"], "watch_min": dcfg["watch_min"], "refresh_move": REFRESH_MOVE, "max_refresh": MAX_REFRESH,
                        "max_adhoc": autopilot.MAX_ADHOC}}

@@ -11,9 +11,11 @@
 4) 보고 — 보고·리포트를 부탁하면 make_report 로 한 페이지 보고서(briefing.snapshot: 보유 종목·현황·회의 요약·장내 이슈 — 관리자가
    계속 볼 것만, 숫자는 모두 코드)를 만들고 비서는 짧은 의견(comment)만 붙인다. 채팅방에 보고서 카드로 남고 이미지로 저장할 수 있다.
 5) 설정 — 말로 바꾸는 운영 설정: 회의 시각·하루 회의 수·AI 추가 회의 수·자동 운용 켜기/끄기(update_schedule → autopilot),
-   토론 라운드·후보 수·모델(update_debate → config.agent_options), 보고(아침 브리핑) 시각·요일·매월 날짜·휴장일(update_briefing →
-   morning), 에이전트 참여(set_agent → 명단), 운용 수익률의 기준 원금(set_baseline → briefing: 다시 정하기·추가 입금·출금). 검사는 각 모듈 그대로, 바뀔 때마다 '설정 변경: 전 → 후' 줄을 남긴다. 주문 한도·승인
-   생략은 실제 돈에 바로 닿아 채팅으로 바꾸지 않는다(설정 > 투자).
+   토론 라운드·후보 수·모델(update_debate → config.agent_options), 보고(아침 브리핑 · 장 마감 보고) 시각·요일·매월 날짜·휴장일
+   (update_briefing → morning), 운용 데스크의 장 전 리서치·리스크 감시 간격·경보 기준·수시 회의·급변 리서치(update_desk → desk),
+   에이전트 참여(set_agent → 명단), 운용 수익률의 기준 원금(set_baseline → briefing: 다시 정하기·추가 입금·출금). 검사는 각 모듈 그대로,
+   바뀔 때마다 '설정 변경: 전 → 후' 줄을 남긴다. 비상 정지(halt_trading)는 전체 주문 중지를 켜기만 한다. 주문 한도·승인 생략·
+   주문 재개는 실제 돈에 바로 닿아 채팅으로 바꾸지 않는다(설정 > 투자).
 6) 리서치 — 운용 데스크(시장 전략가·섹터 애널리스트·종목 발굴 애널리스트)의 오늘 결과를 get_research 로 전하고, 다시 보라는 말이면
    run_research 로 지금 리서치를 시작한다(desk.start_research — 주문과 무관).
 7) 운용 목표 — 운용 목표(policy: 목표 방식·수익률·벤치마크·기간·매매 빈도·위험·손실 한도·주식 비중 등)를 보고(get_policy) 고친다
@@ -81,10 +83,13 @@ SYSTEM = f"""당신은 Mallot 의 투자 비서 {PROFILE['name']}({PROFILE['full
    2~3문장 의견(보유 종목에서 가장 눈여겨볼 점, 최근 회의 결론, 보유 종목에 닿는 장내 이슈 — 설정·일정 이야기는 빼고)만 쓰고,
    reply 는 '보고서를 만들었어요'처럼 짧게.
 5) 설정 변경: 회의를 언제·하루 몇 번 할지, AI 가 더할 회의 수, 자동 운용 켜기/끄기(update_schedule), 토론 라운드·후보 종목 수·모델
-   (update_debate), 보고(아침 브리핑) 시각·요일·매월 날짜·휴장일에도 보낼지(update_briefing), 에이전트를 회의에서 빼거나 넣기(set_agent)를
-   말로 바꿀 수 있습니다. 먼저 get_settings 로 지금 값을 보고 바꾸세요. '하루 N번'이면 자동 판단 시간(보통 09:05~15:15) 안에서 장 시작
+   (update_debate), 보고 — 아침 브리핑 시각·장 마감 보고(켜기·시각)·요일·매월 날짜·휴장일에도 보낼지(update_briefing), 운용 데스크 —
+   장 전 리서치·리스크 감시 간격·급락/급등 경보 기준·경보 때 수시 회의·시장 급변 때 리서치(update_desk), 에이전트를 회의에서 빼거나
+   넣기(set_agent)를 말로 바꿀 수 있습니다. '자동 운용 중이야?'·'보고 언제 와?'처럼 물으면 get_settings 로 확인해 답하세요.
+   먼저 get_settings 로 지금 값을 보고 바꾸세요. '하루 N번'이면 자동 판단 시간(보통 09:05~15:15) 안에서 장 시작
    직후·장 중·마감 전을 살려 고르게 시각을 정하세요. 요일은 0=월 … 6=일. 자동 운용 켜기는 관리자가 분명히 켜 달라고 할 때만 하세요.
-   주문 한도·승인 생략은 바꿀 수 없으니 설정 > 투자를 안내하세요. 바꾼 뒤 reply 에 전후를 짧게 밝히세요.
+   관리자가 '다 멈춰'·'주문 중지'처럼 분명히 말하면 halt_trading 으로 모든 주문을 바로 멈추세요(다시 여는 건 관리자가 직접).
+   주문 한도·승인 생략·주문 재개는 바꿀 수 없으니 설정 > 투자를 안내하세요. 바꾼 뒤 reply 에 전후를 짧게 밝히세요.
    운용 수익률은 기준 원금(처음 넣은 돈 + 추가 입금 − 출금) 대비 토스 계좌 총액입니다. '돈을 더 넣었다·뺐다'면 set_baseline mode=add 로
    (뺀 돈은 음수), '기준을 ○○원으로 다시'면 mode=reset 으로 남기세요.
    '회의는 필요할 때만 / 정해진 시각마다 꼭'은 update_schedule 의 flexible(true = 새 안건이 있을 때만).
@@ -419,12 +424,15 @@ def build_tools(conn: sqlite3.Connection, s: agents.Session, used: list[str], mo
         st = autopilot.status(conn)
         return {"autopilot": st["config"], "auto_judgment_window": st["window"] or ["09:05", "15:15"],
                 "debate": config.agent_options(conn), "model_hint": "비우면 기본 LLM, claude-… 또는 local",
-                "briefing": {k: v for k, v in morning.get_config(conn).items() if k != "last"},
+                "briefing": {k: v for k, v in morning.get_config(conn).items() if k not in ("last", "close_last")},
+                "desk": {"values": desk.get_config(conn), "summary": desk.describe(desk.get_config(conn)),
+                         "ranges": {k: list(v) for k, v in desk.BOUNDS.items()}},
+                "trading_halted": config.halted(conn),
                 "weekday_codes": "0=월 1=화 2=수 3=목 4=금 5=토 6=일",
                 "agents": [{"key": a["key"], "name": a["name"], "title": a["title"], "enabled": a["enabled"], "executor": a["executor"]}
                            for a in agents.get_roster(conn)],
                 "baseline": briefing.get_baseline(conn),
-                "not_by_chat": "주문 한도·승인 생략·전체 주문 중지는 설정 > 투자"}
+                "not_by_chat": "주문 한도·승인 생략·전체 주문 중지 풀기(재개)는 설정 > 투자 — 멈추기는 halt_trading 으로 가능"}
 
     async def update_schedule(a: dict) -> dict:
         before = autopilot.get_config(conn)
@@ -490,7 +498,9 @@ def build_tools(conn: sqlite3.Connection, s: agents.Session, used: list[str], mo
                 time=str(a["time"]).strip() if a.get("time") else None,
                 weekdays=[int(x) for x in a["weekdays"]] if isinstance(a.get("weekdays"), list) else None,
                 month_days=[int(x) for x in a["month_days"]] if isinstance(a.get("month_days"), list) else None,
-                skip_holidays=a.get("skip_holidays") if isinstance(a.get("skip_holidays"), bool) else None)
+                skip_holidays=a.get("skip_holidays") if isinstance(a.get("skip_holidays"), bool) else None,
+                close_enabled=a.get("close_enabled") if isinstance(a.get("close_enabled"), bool) else None,
+                close_time=str(a["close_time"]).strip() if a.get("close_time") else None)
         except (morning.MorningError, TypeError, ValueError) as e:
             note("update_briefing", False)
             return {"ok": False, "error": str(e)}
@@ -498,6 +508,31 @@ def build_tools(conn: sqlite3.Connection, s: agents.Session, used: list[str], mo
         changed("보고(아침 브리핑)", ("" if before["enabled"] else "꺼짐 · ") + before["summary"],
                 ("" if after["enabled"] else "꺼짐 · ") + after["summary"])
         return {"ok": True, "before": before, "after": after}
+
+    async def update_desk(a: dict) -> dict:
+        before = desk.get_config(conn)
+        try:
+            after = desk.save_config(conn, {k: a[k] for k in desk.DEFAULT_CONFIG if a.get(k) is not None})
+        except desk.DeskError as e:
+            note("update_desk", False)
+            return {"ok": False, "error": str(e)}
+        note("update_desk")
+        b, n = desk.describe(before), desk.describe(after)
+        for what in n:
+            changed(what, b[what], n[what])
+        return {"ok": True, "before": b, "after": n}
+
+    async def halt_trading(a: dict) -> dict:
+        reason = str(a.get("reason") or "").strip()[:200]
+        if not reason:
+            return {"ok": False, "error": "reason(왜 멈추는지)이 필요해요"}
+        if config.halted(conn):
+            note("halt_trading")
+            return {"ok": True, "note": "이미 전체 주문이 멈춰 있어요 — 다시 열기는 설정 > 투자"}
+        config.save_trading(conn, halt=True)
+        note("halt_trading")
+        changed("전체 주문", "열림", f"중지 — {reason}")
+        return {"ok": True, "note": "모든 주문을 멈췄어요 — 다시 열기는 관리자가 설정 > 투자에서"}
 
     async def set_agent(a: dict) -> dict:
         who = str(a.get("agent") or "").strip()
@@ -608,8 +643,9 @@ def build_tools(conn: sqlite3.Connection, s: agents.Session, used: list[str], mo
         _tool("start_now", "지금 바로 판단(에이전트 토론)을 시작한다. instruction = 관리자의 즉시 지시 그대로. "
               "자동 운용이 켜져 있으면 과반 게이트·승인 없이 주문까지, 꺼져 있으면 만장일치·관리자 승인.",
               {"instruction": {"type": "string"}}, ["instruction"], start_now),
-        _tool("get_settings", "지금 운영 설정 — 자동 운용(켜짐·정기 회의 시각·AI 추가 회의 수), 토론(라운드·후보 수·모델), 보고(아침 브리핑 "
-              "시각·요일·매월 날짜·휴장일), 에이전트 참여.", {}, [], get_settings),
+        _tool("get_settings", "지금 운영 설정 — 자동 운용(켜짐·운용 방식·정기 회의 시각·AI 추가 회의 수), 토론(라운드·후보 수·모델), 보고(아침 브리핑 "
+              "시각·장 마감 보고·요일·매월 날짜·휴장일), 운용 데스크(장 전 리서치·리스크 감시 간격·경보 기준·수시 회의·급변 리서치), "
+              "전체 주문 중지 여부, 에이전트 참여, 기준 원금.", {}, [], get_settings),
         _tool("update_schedule", "정기 회의 시각(slots: 1~6개, 그 수가 하루 회의 수)·AI 가 더할 회의 수(max_extra 0~6)·자동 운용 켜기/끄기(enabled)·"
               "회의 방식(flexible: true = 새 안건이 있을 때만, false = 정기 시각마다 꼭)·운용 방식(mode: continuous 상시 운용 / meetings 정기 회의).",
               {"slots": {"type": "array", "items": hhmm}, "max_extra": {"type": "integer"}, "enabled": {"type": "boolean"},
@@ -620,10 +656,20 @@ def build_tools(conn: sqlite3.Connection, s: agents.Session, used: list[str], mo
               {"note": {"type": "string"}}, [], run_research),
         _tool("update_debate", "토론 라운드(rounds 1~3)·후보 종목 수(max_candidates 2~10)·모델(model: 비우면 기본, claude-… 또는 local).",
               {"rounds": {"type": "integer"}, "max_candidates": {"type": "integer"}, "model": {"type": "string"}}, [], update_debate),
-        _tool("update_briefing", "보고(아침 브리핑) — 켜기(enabled)·시각(time 05:00~12:00)·요일(weekdays 0=월~6=일)·매월 날짜(month_days, "
-              "빈 배열이면 날짜 제한 없음)·휴장일 건너뛰기(skip_holidays).",
+        _tool("update_briefing", "보고 — 아침 브리핑 켜기(enabled)·시각(time 05:00~12:00), 장 마감 보고 켜기(close_enabled)·시각(close_time "
+              "15:30~22:00), 두 보고에 같이 쓰는 요일(weekdays 0=월~6=일)·매월 날짜(month_days, 빈 배열이면 날짜 제한 없음)·"
+              "휴장일 건너뛰기(skip_holidays).",
               {"enabled": {"type": "boolean"}, "time": hhmm, "weekdays": {"type": "array", "items": {"type": "integer"}},
-               "month_days": {"type": "array", "items": {"type": "integer"}}, "skip_holidays": {"type": "boolean"}}, [], update_briefing),
+               "month_days": {"type": "array", "items": {"type": "integer"}}, "skip_holidays": {"type": "boolean"},
+               "close_enabled": {"type": "boolean"}, "close_time": hhmm}, [], update_briefing),
+        _tool("update_desk", "운용 데스크 — 장 전 리서치 켜기(research)·장 시작 몇 분 전(prep_min 10~120), 리스크 감시 켜기(watch)·간격(watch_min "
+              "5~60분), 경보 기준 %(drop_pct 보유 급락 1~20 · jump_pct 보유 급등 1~30 · breakout_pct 발굴 종목 급등 1~30), "
+              "경보 때 수시 회의(adhoc), 시장 급변 때 리서치 다시(refresh). 바꿀 것만.",
+              {"research": {"type": "boolean"}, "prep_min": {"type": "integer"}, "watch": {"type": "boolean"},
+               "watch_min": {"type": "integer"}, "drop_pct": {"type": "number"}, "jump_pct": {"type": "number"},
+               "breakout_pct": {"type": "number"}, "adhoc": {"type": "boolean"}, "refresh": {"type": "boolean"}}, [], update_desk),
+        _tool("halt_trading", "모든 주문을 즉시 멈춘다(비상 정지). 멈추기만 할 수 있고 다시 열기는 관리자가 설정 > 투자에서. reason = 왜.",
+              {"reason": {"type": "string"}}, ["reason"], halt_trading),
         _tool("set_agent", "분석 에이전트를 회의에서 빼거나(enabled=false) 다시 넣는다. 실행 담당(트레이더)은 뺄 수 없다.",
               {"agent": {"type": "string", "description": "key·직함·이름"}, "enabled": {"type": "boolean"}}, ["agent", "enabled"], set_agent),
         _tool("set_baseline", "운용 수익률의 기준 원금 — mode=reset 은 이 금액으로 다시 정하기, mode=add 는 추가 입금(+)·출금(−) 하나 더하기. "

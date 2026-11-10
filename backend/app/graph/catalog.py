@@ -160,7 +160,8 @@ def helpers(conn: sqlite3.Connection) -> list[dict]:
          "tools": a_tools,
          "rules": [{"title": "주문 도구 없음", "text": "비서는 주문하지 않는다. 즉시 지시(start_now)는 토론을 열고, 주문은 토론의 트레이더만.",
                     "ref": ref(assistant.build_tools)},
-                   {"title": "설정 변경은 각 모듈의 검사 그대로", "text": "주문 한도 · 승인 생략 · 전체 중지는 채팅으로 못 바꾼다.",
+                   {"title": "설정 변경은 각 모듈의 검사 그대로", "text": "주문 한도 · 승인 생략 · 주문 재개는 채팅으로 못 바꾼다. "
+                    "전체 주문 중지는 켜기(halt_trading)만 한다.",
                     "ref": ref(assistant.build_tools)}],
          "talks_to": [{"to": "admin", "why": "채팅 답 · 보고서"}] + [{"to": k, "why": "ask_agent"} for k in roster]
                      + [{"to": "advisor", "why": "start_advice"}, {"to": "scheduler", "why": "schedule_meeting · cancel_meeting"},

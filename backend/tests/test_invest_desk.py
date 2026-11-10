@@ -322,3 +322,72 @@ def test_morning_research_retries_after_failure(conn, broker, monkeypatch):
     clock["t"] = at("09:40")
     desk_agents.tick(conn, at("09:40"), sample("09:40"))
     assert len(calls) == 3                                                # 결과가 있으면 다시 하지 않는다
+
+
+# ---- 데스크 설정 ----
+def test_desk_config_validates_and_drives_watch(conn, broker, pilot, monkeypatch):
+    assert desk.get_config(conn) == desk.DEFAULT_CONFIG
+    with pytest.raises(desk.DeskError):
+        desk.save_config(conn, {"watch_min": 1})                       # 5~60분
+    with pytest.raises(desk.DeskError):
+        desk.save_config(conn, {"adhoc": "yes"})
+    with pytest.raises(desk.DeskError):
+        desk.save_config(conn, {"nope": 1})
+    assert desk.get_config(conn) == desk.DEFAULT_CONFIG                # 실패하면 아무것도 바꾸지 않는다
+    cfg = desk.save_config(conn, {"drop_pct": 7, "adhoc": False})
+    assert cfg["drop_pct"] == 7.0 and cfg["adhoc"] is False and desk.get_config(conn) == cfg
+    broker.positions["000660"] = {"quantity": 2.0, "cost": 180_000.0}
+    monkeypatch.setattr(desk_agents, "day_change", lambda p, s: -0.052)
+    assert desk_agents.watch(conn, sample("10:00"), at("10:00")) == []  # 급락 기준 7% — -5.2% 는 경보 아님
+    desk.save_config(conn, {"drop_pct": 5})
+    out = desk_agents.watch_and_act(conn, sample("10:00"), at("10:00"))
+    assert [a["kind"] for a in out["alerts"]] == ["drop"] and "adhoc" not in out and not pilot   # 수시 회의 꺼짐
+    assert "다음 회의 안건으로" in agent_msgs(conn)[-1]["text"] and desk.state(conn, at("10:00").date())["pending"] is None
+
+
+def test_desk_tick_follows_config(conn, broker, monkeypatch):
+    from app.invest.marketdata import market
+    clock = {"t": at("08:25")}
+    monkeypatch.setattr(market, "now_kst", lambda: clock["t"])
+    autopilot.save_config(conn, enabled=True)
+    desk.save_config(conn, {"research": False, "watch_min": 30})
+    watched = []
+    monkeypatch.setattr(desk_agents, "watch_and_act", lambda c, p, now: watched.append(now.strftime("%H:%M")) or {})
+    assert desk_agents.tick(conn, at("08:25"), sample("08:25")) is None     # 장 전 리서치 꺼짐
+    assert not desk.state(conn, at("08:25").date())["research"]
+    desk_agents.tick(conn, at("09:06"), sample("09:06"))                     # 리서치 없이도 감시는 한다
+    desk_agents.tick(conn, at("09:20"), sample("09:20"))                     # 30분 간격
+    desk_agents.tick(conn, at("09:40"), sample("09:40"))
+    assert watched == ["09:06", "09:40"]
+    desk.save_config(conn, {"watch": False})
+    desk_agents.tick(conn, at("10:20"), sample("10:20"))
+    assert watched == ["09:06", "09:40"]                                     # 감시 꺼짐
+    st = desk.status(conn, at("10:20"))
+    assert st["config"]["watch"] is False and st["limits"]["watch_min"] == 30
+    assert next(s for s in st["process"] if s["key"] == "risk")["text"] == "감시 꺼짐"
+
+
+def test_desk_config_api_and_assistant(client, broker, at_open, monkeypatch):
+    from app.core.db import connect
+    from app.invest.broker import config
+    assert client.put("/api/invest/desk/config", json={"prep_min": 5}).status_code == 400
+    st = client.put("/api/invest/desk/config", json={"prep_min": 60, "refresh": False}).json()
+    assert st["config"]["prep_min"] == 60 and st["config"]["refresh"] is False and st["limits"]["prep_min"] == 60
+    fake = Fake([
+        ("get_settings", {}),
+        ("update_desk", {"watch_min": 15, "jump_pct": 8, "adhoc": False}),
+        ("update_desk", {"breakout_pct": 99}),
+        ("halt_trading", {"reason": "관리자가 다 멈추라고 함"}),
+    ], reply="바꿨어요")
+    monkeypatch.setattr(assistant, "LLM", fake)
+    say(client, "감시는 15분마다, 급등 경보는 8%, 수시 회의는 열지 마. 그리고 주문 다 멈춰")
+    got = fake.results[0]
+    assert got["desk"]["values"]["prep_min"] == 60 and got["trading_halted"] is False and "리서치" in got["desk"]["summary"]
+    assert fake.results[1]["ok"] and fake.results[2]["ok"] is False and "발굴 종목 급등" in fake.results[2]["error"]
+    conn = connect()
+    cfg = desk.get_config(conn)
+    assert (cfg["watch_min"], cfg["jump_pct"], cfg["adhoc"]) == (15, 8.0, False) and config.halted(conn)
+    events = [m["text"] for m in thread(client) if m["role"] == "event"]
+    assert "설정 변경 · 수시 회의: 경보 때 열기 → 열지 않음" in events
+    assert any(e.startswith("설정 변경 · 리스크 감시: 10분마다") and "15분마다" in e for e in events)
+    assert "설정 변경 · 전체 주문: 열림 → 중지 — 관리자가 다 멈추라고 함" in events

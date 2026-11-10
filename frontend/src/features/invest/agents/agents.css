@@ -425,6 +425,12 @@
   .report-sectors th, .report-sectors td { padding: 3px 1px; }
 }
 .morning-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.desk-settings { margin-top: 8px; display: flex; flex-direction: column; gap: 8px; }
+.desk-settings summary { cursor: pointer; color: var(--muted); }
+.desk-settings-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 8px; margin: 8px 0; }
+.desk-settings-grid label { display: flex; flex-direction: column; gap: 4px; }
+.desk-settings-input { display: flex; align-items: center; gap: 4px; }
+.desk-settings-input input { width: 100%; min-width: 0; }
 .morning-row input[type="time"] { width: auto; }
 .weekday-chips { display: flex; gap: 4px; flex-wrap: wrap; }
 .chip-toggle { min-width: 32px; padding: 4px 8px; border-radius: 999px; border: 1px solid var(--border); background: var(--card); font-size: 0.8rem; }

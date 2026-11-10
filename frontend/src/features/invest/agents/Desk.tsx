@@ -4,9 +4,10 @@
  * 숫자는 모두 서버 코드가 계산한 값, 상승 빨강·하락 파랑.
  */
 import { useState } from 'react'
-import { investApi, type Agent, type AssistantMessage, type DeskAlert, type Ideas, type MarketView, type Screening,
-  type SectorView } from '../api'
+import { investApi, type Agent, type AssistantMessage, type DeskAlert, type DeskConfig, type DeskStatus, type Ideas, type MarketView,
+  type Screening, type SectorView } from '../api'
 import { useTicker } from '../format'
+import { useReadOnly } from '../../../shared/readOnly'
 import { useLoad } from '../../../shared/useLoad'
 import { AgentAvatar } from './Face'
 import { nameOf, type Person } from './people'
@@ -187,6 +188,7 @@ export function DeskProcess({ roster, onChanged }: { roster: Agent[]; onChanged?
   const [note, setNote] = useState<string | null>(null)
   if (data && running !== !!data.running) setRunning(!!data.running)
   if (!data) return error ? <p className="error small">{error}</p> : null
+  const c = data.config
   const who = (key: string): Person => {
     const d = data.people.find((p) => p.key === key)
     if (d) return d
@@ -229,10 +231,78 @@ export function DeskProcess({ roster, onChanged }: { roster: Agent[]; onChanged?
         {note && <span className="error small">{note}</span>}
       </div>
       <p className="muted small">
-        자동 운용이 켜져 있으면 장 시작 {data.limits.prep_min}분 전에 리서치하고, 장 중에는 {data.limits.watch_min}분마다 리스크를 살펴 급변하면
-        그 종목으로 수시 회의를 열어요(하루 {data.limits.max_adhoc}번). 지수가 {(data.limits.refresh_move * 100).toFixed(1)}% 넘게 움직이면 리서치를 다시 해요.
-        결과는 채팅방에 각 담당이 남겨요.
+        자동 운용이 켜져 있으면 {c.research ? `장 시작 ${c.prep_min}분 전에 리서치하고` : '장 전 리서치 없이'},{' '}
+        {c.watch ? `장 중에는 ${c.watch_min}분마다 리스크를 살펴 ${c.adhoc ? `급변하면 그 종목으로 수시 회의를 열어요(하루 ${data.limits.max_adhoc}번)` : '급변하면 알려 줘요(수시 회의는 열지 않음)'}` : '장 중 리스크 감시는 꺼 뒀어요'}.
+        {c.refresh && ` 지수가 ${(data.limits.refresh_move * 100).toFixed(1)}% 넘게 움직이면 리서치를 다시 해요.`}
+        {' '}결과는 채팅방에 각 담당이 남겨요.
       </p>
+      <DeskSettings c={c} bounds={data.bounds} onSaved={() => setVersion((v) => v + 1)} />
     </section>
+  )
+}
+
+type DeskNum = 'prep_min' | 'watch_min' | 'drop_pct' | 'jump_pct' | 'breakout_pct'
+const DESK_NUMS: { key: DeskNum; label: string; unit: string }[] = [
+  { key: 'prep_min', label: '장 시작 전', unit: '분' },
+  { key: 'watch_min', label: '감시 간격', unit: '분' },
+  { key: 'drop_pct', label: '보유 급락', unit: '%' },
+  { key: 'jump_pct', label: '보유 급등', unit: '%' },
+  { key: 'breakout_pct', label: '발굴 급등', unit: '%' },
+]
+const DESK_TOGGLES: { key: 'research' | 'watch' | 'adhoc' | 'refresh'; label: string }[] = [
+  { key: 'research', label: '장 전 리서치' },
+  { key: 'watch', label: '리스크 감시' },
+  { key: 'adhoc', label: '경보 때 수시 회의' },
+  { key: 'refresh', label: '급변 때 리서치 다시' },
+]
+
+/** 데스크 설정 — 켜기 · 끄기는 바로, 숫자는 고친 뒤 저장. 채팅으로 "감시는 5분마다"처럼 말해도 비서가 바꾼다 */
+function DeskSettings({ c, bounds, onSaved }: { c: DeskConfig; bounds: DeskStatus['bounds']; onSaved: () => void }) {
+  const readOnly = useReadOnly()
+  const [draft, setDraft] = useState<Partial<Record<DeskNum, string>>>({})
+  const [busy, setBusy] = useState(false)
+  const [note, setNote] = useState<string | null>(null)
+  const save = async (body: Partial<DeskConfig>) => {
+    setBusy(true)
+    setNote(null)
+    try {
+      await investApi.saveDeskConfig(body)
+      setDraft({})
+      onSaved()
+    } catch (e) {
+      setNote(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+  const dirty = Object.entries(draft).filter(([k, v]) => v !== String(c[k as DeskNum]))
+  return (
+    <details className="desk-settings">
+      <summary className="small">데스크 설정</summary>
+      <div className="weekday-chips" role="group" aria-label="데스크 켜기 · 끄기">
+        {DESK_TOGGLES.map((t) => (
+          <button key={t.key} className={`chip-toggle${c[t.key] ? ' on' : ''}`} aria-pressed={c[t.key]} disabled={busy || readOnly}
+            onClick={() => save({ [t.key]: !c[t.key] })}>{t.label}</button>
+        ))}
+      </div>
+      <div className="desk-settings-grid">
+        {DESK_NUMS.map((n) => (
+          <label key={n.key} className="small">
+            {n.label}
+            <span className="desk-settings-input">
+              <input inputMode="decimal" value={draft[n.key] ?? String(c[n.key])} disabled={readOnly}
+                title={`${bounds[n.key][0]}~${bounds[n.key][1]}${n.unit}`}
+                onChange={(e) => setDraft((d) => ({ ...d, [n.key]: e.target.value }))} />
+              {n.unit}
+            </span>
+          </label>
+        ))}
+      </div>
+      {dirty.length > 0 && (
+        <button className="primary" disabled={busy}
+          onClick={() => save(Object.fromEntries(dirty.map(([k, v]) => [k, Number(v)])))}>저장</button>
+      )}
+      {note && <p className="error small">{note}</p>}
+    </details>
   )
 }

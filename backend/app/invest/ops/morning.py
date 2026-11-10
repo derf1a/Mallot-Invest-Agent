@@ -8,6 +8,8 @@
 - 설정(settings invest_morning_briefing): 켜기(기본 켜짐)·시각(05:00~12:00)·요일(기본 매일)·매월 날짜(비우면 날짜 제한 없음)·
   휴장일 건너뛰기(기본 예 — 매월 1일처럼 날짜를 정했다면 끄면 휴장일에도 보낸다). 주문과 상관없어 PIN 은 받지 않는다.
   채팅으로 비서에게 말해도 바뀐다(assistant.update_briefing).
+- 장 마감 보고(close_enabled, 기본 꺼짐 · close_time 15:30~22:00, 기본 16:00): 같은 요일·날짜·휴장일 규칙으로 하루를 정리하는 보고서를
+  하나 더 보낸다(CLOSE_SYSTEM — 오늘 결과·회의 결론·내일 볼 것). 아침 브리핑을 꺼도 따로 켤 수 있다. 보낸 날은 S_LAST_CLOSE.
 """
 
 import asyncio
@@ -28,7 +30,10 @@ from app.system import issues
 
 S_CONFIG = "invest_morning_briefing"
 S_LAST = "invest_morning_briefing_last"  # 마지막으로 보낸(또는 휴장으로 건너뛴) 날짜
-DEFAULT_CONFIG = {"enabled": True, "time": "08:30", "weekdays": [0, 1, 2, 3, 4, 5, 6], "month_days": [], "skip_holidays": True}
+S_LAST_CLOSE = "invest_close_report_last"  # 장 마감 보고를 마지막으로 보낸(또는 건너뛴) 날짜
+DEFAULT_CONFIG = {"enabled": True, "time": "08:30", "weekdays": [0, 1, 2, 3, 4, 5, 6], "month_days": [], "skip_holidays": True,
+                  "close_enabled": False, "close_time": "16:00"}
+CLOSE_RANGE = (15 * 60 + 30, 22 * 60)  # 장 마감 보고 시각 (정규장 끝난 뒤 ~ 밤 10시)
 WEEKDAY_KO = "월화수목금토일"
 LATE_MIN = 180
 _HHMM = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)$")
@@ -38,6 +43,11 @@ SYSTEM = f"""당신은 Mallot 의 투자 비서 {assistant.PROFILE['name']}입�
 주어진 보고서 글만 근거로 아침 의견을 2~4문장 쓰세요 — 관리자가 오늘 계속 참고할 것만: [주의]가 있으면 먼저, 보유 종목에서 눈여겨볼
 것(손익·비중·오늘 등락·그 종목 뉴스), 지난 회의 결론과 다음에 볼 것, 장내 이슈(시황·섹터·뉴스) 가운데 보유 종목에 닿는 것.
 설정·일정·시스템·개발 이야기는 하지 말고(시스템 문제는 시스템 관리자가 맡습니다, 관리자에게 확인을 요청하지 마세요), 보고서에 없는 숫자는 쓰지 말고, 수익을 장담하지 마세요. 한국어, 짧고 친근하게, 첫 문장은 아침 인사로."""
+
+CLOSE_SYSTEM = f"""당신은 Mallot 의 투자 비서 {assistant.PROFILE['name']}입니다. 장이 끝난 뒤 관리자에게 오늘을 정리하는 마감 보고를 보냅니다.
+주어진 보고서 글만 근거로 2~4문장 쓰세요 — [주의]가 있으면 먼저, 오늘 보유 종목 등락과 손익에서 눈에 띄는 것, 오늘 회의 결론과 낸 주문,
+내일 장에서 볼 것. 설정·일정·시스템·개발 이야기는 하지 말고(시스템 문제는 시스템 관리자가 맡습니다, 관리자에게 확인을 요청하지 마세요),
+보고서에 없는 숫자는 쓰지 말고, 수익을 장담하지 마세요. 한국어, 짧고 친근하게, 첫 문장은 수고 인사로."""
 
 CommentLlm = Callable[[str, str, str, dict, str | None], Awaitable[dict]]
 
@@ -83,7 +93,10 @@ def get_config(conn: sqlite3.Connection) -> dict:
         out["weekdays"] = sorted(set(days)) or out["weekdays"]
         out["month_days"] = sorted({d for d in raw.get("month_days") or [] if isinstance(d, int) and 1 <= d <= 31})
         out["skip_holidays"] = bool(raw.get("skip_holidays", True))
-    return {**out, "last": _get(conn, S_LAST, None), "summary": describe(out)}
+        out["close_enabled"] = bool(raw.get("close_enabled", out["close_enabled"]))
+        if isinstance(raw.get("close_time"), str) and _HHMM.match(raw["close_time"]):
+            out["close_time"] = raw["close_time"]
+    return {**out, "last": _get(conn, S_LAST, None), "close_last": _get(conn, S_LAST_CLOSE, None), "summary": describe(out)}
 
 
 def describe(cfg: dict) -> str:
@@ -92,7 +105,8 @@ def describe(cfg: dict) -> str:
     when = (f"매월 {'·'.join(map(str, cfg['month_days']))}일" + ("" if len(days) == 7 else f"({'·'.join(WEEKDAY_KO[d] for d in days)}요일만)")
             if cfg["month_days"] else "매일" if len(days) == 7 else "평일" if days == [0, 1, 2, 3, 4]
             else f"매주 {'·'.join(WEEKDAY_KO[d] for d in days)}")
-    return f"{when} {cfg['time']}" + ("" if cfg["skip_holidays"] else " · 휴장일에도")
+    times = cfg["time"] + (f" · 마감 {cfg['close_time']}" if cfg.get("close_enabled") else "")
+    return f"{when} {times}" + ("" if cfg["skip_holidays"] else " · 휴장일에도")
 
 
 def due_on(cfg: dict, day: date) -> bool:
@@ -102,8 +116,14 @@ def due_on(cfg: dict, day: date) -> bool:
 
 def save_config(conn: sqlite3.Connection, *, enabled: bool | None = None, time: str | None = None,
                 weekdays: list[int] | None = None, month_days: list[int] | None = None,
-                skip_holidays: bool | None = None) -> dict:
-    cfg = {k: v for k, v in get_config(conn).items() if k not in ("last", "summary")}
+                skip_holidays: bool | None = None, close_enabled: bool | None = None, close_time: str | None = None) -> dict:
+    cfg = {k: v for k, v in get_config(conn).items() if k not in ("last", "close_last", "summary")}
+    if close_time is not None:
+        if not _HHMM.match(close_time) or not CLOSE_RANGE[0] <= _minutes(close_time) <= CLOSE_RANGE[1]:
+            raise MorningError("장 마감 보고 시각은 15:30~22:00 사이 HH:MM 으로 적어 주세요")
+        cfg["close_time"] = close_time
+    if close_enabled is not None:
+        cfg["close_enabled"] = close_enabled
     if time is not None:
         if not _HHMM.match(time) or not 5 * 60 <= _minutes(time) <= 12 * 60:
             raise MorningError("아침 브리핑 시각은 05:00~12:00 사이 HH:MM 으로 적어 주세요")
@@ -124,9 +144,9 @@ def save_config(conn: sqlite3.Connection, *, enabled: bool | None = None, time: 
     return get_config(conn)
 
 
-def _fallback(r: dict) -> str:
+def _fallback(r: dict, close: bool = False) -> str:
     """LLM 없이 — 막힌 것, 총 자산·수익률, 지난 회의 한 줄, 시황 한 줄."""
-    parts = ["좋은 아침이에요."]
+    parts = ["오늘도 수고하셨어요." if close else "좋은 아침이에요."]
     parts += [f"먼저 확인할 것: {w}." for w in r.get("warnings") or []]
     pf, bl = r["performance"]["portfolio"], r["performance"].get("baseline")
     if pf:
@@ -142,43 +162,45 @@ def _fallback(r: dict) -> str:
     return " ".join(parts)
 
 
-def send(conn: sqlite3.Connection, now: datetime | None = None, provider=None, model: str | None = None) -> dict:
-    """지금 아침 브리핑을 만들어 채팅방에 남긴다. → 남긴 메시지"""
+def send(conn: sqlite3.Connection, now: datetime | None = None, provider=None, model: str | None = None, close: bool = False) -> dict:
+    """지금 아침 브리핑(close=True 면 장 마감 보고)을 만들어 채팅방에 남긴다. → 남긴 메시지"""
     now = now or market.now_kst()
     data = briefing.snapshot(conn, provider, now)
-    data["title"] = "아침 브리핑"
+    data["title"] = "장 마감 보고" if close else "아침 브리핑"
     try:
         with as_agent("assistant"):
-            raw = asyncio.run(LLM("invest_assistant", SYSTEM, briefing.to_text(data), SCHEMA, model))
+            raw = asyncio.run(LLM("invest_assistant", CLOSE_SYSTEM if close else SYSTEM, briefing.to_text(data), SCHEMA, model))
         comment = issues.strip_notes(str((raw or {}).get("comment") or ""))[:600]
     except (LLMError, TypeError, ValueError):
         comment = ""
-    data["comment"] = comment or _fallback(data)
-    msg = assistant.add(conn, "event", "아침 브리핑이 왔어요", kind="report", morning=True, report=data, body=briefing.to_text(data),
-                        by="assistant" if comment else "code")
-    _put(conn, S_LAST, now.date().isoformat())
+    data["comment"] = comment or _fallback(data, close)
+    msg = assistant.add(conn, "event", f"{data['title']}가 왔어요", kind="report", morning=not close, close=close, report=data,
+                        body=briefing.to_text(data), by="assistant" if comment else "code")
+    _put(conn, S_LAST_CLOSE if close else S_LAST, now.date().isoformat())
     return msg
 
 
 def tick(conn: sqlite3.Connection, now: datetime | None = None, provider=None) -> dict | None:
-    """정한 시각이 지났고 오늘 아직 안 보냈으면 보낸다(휴장일은 건너뛴 날로 남김). 할 일이 없으면 None."""
+    """정한 시각이 지났고 오늘 아직 안 보냈으면 보낸다 — 아침 브리핑, 그다음 장 마감 보고(휴장일은 건너뛴 날로 남김). 할 일이 없으면 None."""
     cfg = get_config(conn)
-    if not cfg["enabled"]:
-        return None
     now = now or market.now_kst()
     today = now.date().isoformat()
     minute = now.hour * 60 + now.minute
-    start = _minutes(cfg["time"])
-    if cfg["last"] == today or not due_on(cfg, now.date()) or not start <= minute <= start + LATE_MIN:
-        return None
-    p = provider or market.provider()
-    closed = False
-    if cfg["skip_holidays"]:
-        try:
-            closed = not p.session().get("start")
-        except (MarketError, TossError):
-            closed = False  # 장 운영을 모르면 보낸다 — 브리핑이 그 사실도 알려 준다
-    if closed:
-        _put(conn, S_LAST, today)
-        return {"skipped": "휴장일"}
-    return send(conn, now, p)
+    p = None
+    for close, on, at, last_key, last in ((False, cfg["enabled"], cfg["time"], S_LAST, cfg["last"]),
+                                          (True, cfg["close_enabled"], cfg["close_time"], S_LAST_CLOSE, cfg["close_last"])):
+        start = _minutes(at)
+        if not on or last == today or not due_on(cfg, now.date()) or not start <= minute <= start + LATE_MIN:
+            continue
+        p = p or provider or market.provider()
+        closed = False
+        if cfg["skip_holidays"]:
+            try:
+                closed = not p.session().get("start")
+            except (MarketError, TossError):
+                closed = False  # 장 운영을 모르면 보낸다 — 브리핑이 그 사실도 알려 준다
+        if closed:
+            _put(conn, last_key, today)
+            return {"skipped": "휴장일", **({"close": True} if close else {})}
+        return send(conn, now, p, close=close)
+    return None

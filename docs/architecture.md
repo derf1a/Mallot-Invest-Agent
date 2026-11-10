@@ -19,7 +19,7 @@ core  ←  llm  ←  runs  ←  invest (broker · marketdata · analysis  ←  d
 | `app/invest/marketdata` | 시세 제공자(토스 / 샘플), 기술 지표, 뉴스 RSS, 관심 그룹 |
 | `app/invest/analysis` | 코드가 계산하는 판단 재료 — OpenDART 재무 · 가치평가, 시장 스캔 점수, 판단 기록, 보유 종목 매도 점검, 운용 목표 |
 | `app/invest/debate` | 토론 엔진(`agents.py`: 명단 · 도구 · 라운드 · 게이트 · 트레이더), 상시 운용 채널(`stream.py`), 의견 가중치(`track.py`), 회의록, 토론 범위 |
-| `app/invest/ops` | 자동 운용 일정(`autopilot.py`), 운용 데스크(`desk.py` · `desk_agents.py`), 아침 브리핑 · 보고서, 뉴스 리포트 |
+| `app/invest/ops` | 자동 운용 일정(`autopilot.py`), 운용 데스크(`desk.py` · `desk_agents.py`, 데스크 설정 `invest_desk_config`), 아침 브리핑 · 장 마감 보고(`morning.py`) · 보고서, 뉴스 리포트 |
 | `app/invest/advice` | 투자 비서(`assistant.py`), 자문 에이전트(`advisor.py`) |
 | `app/invest/api*.py` · `jobs/` · `service.py` | 라우터 · 작업(agent_action · desk_research · news_report) · 20초마다 일정 확인 스레드 |
 | `app/graph` | 에이전트 카탈로그(`catalog.py`), 흐름 그래프(`topology.py`), 관찰 그래프(`observed.py`), LangGraph 내보내기 |
