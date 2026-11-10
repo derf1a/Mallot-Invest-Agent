@@ -977,7 +977,9 @@ const enc = encodeURIComponent
 export interface Trade {
   id: number; at: string; symbol: string; name: string; currency: string; side: Side; order_type: 'market' | 'limit'
   status: OrderStatus; quantity: number; price: number | null; amount: number | null
-  now_price: number | null; now_value: number | null; source: 'manual' | 'agent'; run_id: number | null; run_name: string | null
+  now_price: number | null; now_value: number | null
+  /** toss = 앱 밖(토스 앱 · 앱을 쓰기 전)에서 한 거래 — 토스 체결 내역에서 가져옴, id 는 음수 */
+  source: 'manual' | 'agent' | 'toss'; run_id: number | null; run_name: string | null
   reason: string
   /** 매수: 지금 가치 − 매수 금액 */
   pnl?: number | null; pnl_rate?: number | null

@@ -1,7 +1,7 @@
 /**
  * 거래 기록 — 체결된 매수 · 매도마다 거래 금액 · 지금 금액 · 손익과, 그 주문을 낳은 에이전트 토론(행을 누르면 펼침).
  * 맨 위 합계 → 종목별 합계 → 거래 목록 순서. 숫자는 서버(invest/ops/trades.py)가 계산한다. 상승 빨강 · 하락 파랑.
- * 매도 손익은 매도 때 적어 둔 토스 평단(없으면 이 기록 안의 앞선 매수 단가)으로 내고, 둘 다 모르면 비워 둔다.
+ * 앱 주문 + 토스 계좌의 지난 체결(source='toss')을 시각순으로. 매도 손익은 매도 때 적어 둔 토스 평단(없으면 이 기록 안의 앞선 매수 단가)으로 내고, 둘 다 모르면 비워 둔다.
  */
 import { Fragment, useMemo, useState } from 'react'
 import { StatTile } from '../../shared/charts'
@@ -12,8 +12,9 @@ import { dir, pct, price, qty, signed, won } from './format'
 import TradeDebateView from './trades/TradeDebate'
 
 const SIDE = { buy: '매수', sell: '매도' } as const
+const SOURCE = { agent: 'AI', manual: '직접', toss: '토스' } as const
 type SideFilter = 'all' | 'buy' | 'sell'
-type SourceFilter = 'all' | 'agent' | 'manual'
+type SourceFilter = 'all' | 'agent' | 'manual' | 'toss'
 
 const signedWon = (v: number | null | undefined) => (v === null || v === undefined ? '–' : `${signed(v)}원`)
 
@@ -123,9 +124,9 @@ function Trades({ trades, people }: { trades: Trade[]; people: Map<string, Perso
             ))}
           </span>
           <span className="segmented small" role="group" aria-label="누가 냈나">
-            {(['all', 'agent', 'manual'] as const).map((k) => (
+            {(['all', 'agent', 'manual', 'toss'] as const).map((k) => (
               <button key={k} className={source === k ? 'on' : ''} onClick={() => setSource(k)}>
-                {{ all: '전체', agent: 'AI', manual: '직접' }[k]}
+                {{ all: '전체', agent: 'AI', manual: '직접', toss: '토스' }[k]}
               </button>
             ))}
           </span>
@@ -159,7 +160,8 @@ function Trades({ trades, people }: { trades: Trade[]; people: Map<string, Perso
         </div>
       )}
       <p className="muted small">
-        매도 손익은 매도할 때 적어 둔 토스 평단으로 내요. 그 전에 판 주식은 이 기록에서 산 몫만 계산하고, 앱 밖에서 산 몫은 비워 둬요.
+        토스 계좌의 지난 체결(앱 밖 · 앱을 쓰기 전 거래, '토스')도 그때 체결가로 함께 보여요. 매도 손익은 매도할 때 적어 둔 토스 평단으로,
+        없으면 이 기록 안 앞선 매수의 이동평균 단가로 내요. 토스 내역보다 먼저 산 몫은 산 가격을 몰라 비워 둬요.
         '판 뒤'는 판 수량이 지금 얼마인지 — + 면 판 뒤에 올랐다는 뜻이에요.
       </p>
     </article>
@@ -192,7 +194,7 @@ function TradeRow({ x, open, onToggle }: { x: Trade; open: boolean; onToggle: ()
         </span>
       </td>
       <td>
-        {x.source === 'agent' ? <span className="chip">AI</span> : <span className="chip">직접</span>}
+        <span className="chip" title={x.source === 'toss' ? '앱 밖(토스 앱 · 앱을 쓰기 전)에서 한 거래' : undefined}>{SOURCE[x.source]}</span>
         {x.run_id && <span className="holdings-sub">{x.run_name ?? '토론'} #{x.run_id}</span>}
       </td>
     </tr>
