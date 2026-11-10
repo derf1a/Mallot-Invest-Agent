@@ -379,6 +379,8 @@ class MorningIn(BaseModel):
     weekdays: list[int] | None = Field(default=None, max_length=7)     # 0=월 … 6=일
     month_days: list[int] | None = Field(default=None, max_length=31)  # 비우면 날짜 제한 없음
     skip_holidays: bool | None = None
+    close_enabled: bool | None = None                                   # 장 마감 보고
+    close_time: str | None = Field(default=None, max_length=5)
 
 
 @router.get("/morning-briefing")
@@ -392,21 +394,45 @@ def save_morning(body: MorningIn, conn: Conn) -> dict:
     """주문과 상관없는 설정이라 PIN 없이."""
     try:
         return morning.save_config(conn, enabled=body.enabled, time=body.time, weekdays=body.weekdays,
-                                   month_days=body.month_days, skip_holidays=body.skip_holidays)
+                                   month_days=body.month_days, skip_holidays=body.skip_holidays,
+                                   close_enabled=body.close_enabled, close_time=body.close_time)
     except morning.MorningError as e:
         raise HTTPException(400, str(e)) from None
 
 
 @router.post("/morning-briefing/send", status_code=201)
-def send_morning(conn: Conn) -> dict:
-    """지금 아침 브리핑 받아 보기 (채팅방에 보고서 카드로)."""
-    return morning.send(conn)
+def send_morning(conn: Conn, close: bool = False) -> dict:
+    """지금 아침 브리핑(?close=true 면 장 마감 보고) 받아 보기 (채팅방에 보고서 카드로)."""
+    return morning.send(conn, close=close)
 
 
 # ---- 운용 데스크 ----
 @router.get("/desk")
 def read_desk(conn: Conn) -> dict:
     """운용 프로세스 — 리서치 담당·단계별 마지막 결과(시장 국면·확대 섹터·발굴 목록)·리스크 경보·진행 중인 리서치."""
+    return desk.status(conn)
+
+
+class DeskConfigIn(BaseModel):
+    research: bool | None = None
+    prep_min: int | None = None
+    watch: bool | None = None
+    watch_min: int | None = None
+    drop_pct: float | None = None
+    jump_pct: float | None = None
+    breakout_pct: float | None = None
+    adhoc: bool | None = None
+    refresh: bool | None = None
+
+
+@router.put("/desk/config")
+def save_desk_config(body: DeskConfigIn, conn: Conn) -> dict:
+    """데스크 설정 — 장 전 리서치 · 리스크 감시 간격 · 급락 · 급등 기준 · 수시 회의 · 급변 리서치.
+    주문은 그대로 place_order 가 검사해 PIN 없이 (비서도 채팅으로 고친다)."""
+    try:
+        desk.save_config(conn, body.model_dump(exclude_none=True))
+    except desk.DeskError as e:
+        raise HTTPException(e.status, str(e)) from None
     return desk.status(conn)
 
 

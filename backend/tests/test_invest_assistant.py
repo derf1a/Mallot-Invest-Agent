@@ -446,6 +446,27 @@ def test_briefing_schedule_days():
     assert morning.describe({**cfg, "weekdays": [0, 1, 2, 3, 4]}) == "평일 08:30"
 
 
+def test_close_report(client, monkeypatch):
+    """장 마감 보고 — 아침 브리핑을 꺼도 따로 켜고, 하루 한 번, 시각은 15:30~22:00."""
+    from datetime import datetime
+    from app.core.db import connect
+    from app.invest.ops import morning
+    from app.invest.marketdata.market import KST, SampleMarket
+
+    conn = connect()
+    assert client.put("/api/invest/morning-briefing", json={"close_time": "12:00"}).status_code == 400
+    cfg = client.put("/api/invest/morning-briefing", json={"enabled": False, "close_enabled": True, "close_time": "16:10"}).json()
+    assert cfg["summary"] == "매일 08:30 · 마감 16:10" and cfg["close_last"] is None
+    day = lambda hh, mm: datetime(2026, 11, 12, hh, mm, tzinfo=KST)  # noqa: E731
+    assert morning.tick(conn, day(8, 40), SampleMarket()) is None                 # 아침 브리핑 꺼짐
+    assert morning.tick(conn, day(16, 0), SampleMarket()) is None                 # 아직
+    msg = morning.tick(conn, day(16, 15), SampleMarket())
+    assert msg["text"] == "장 마감 보고가 왔어요" and msg["meta"]["close"] and not msg["meta"]["morning"]
+    assert msg["meta"]["report"]["title"] == "장 마감 보고" and msg["meta"]["report"]["comment"].startswith("오늘도 수고하셨어요")
+    assert morning.tick(conn, day(16, 30), SampleMarket()) is None                # 하루 한 번
+    assert morning.get_config(conn)["close_last"] == "2026-11-12"
+
+
 def test_briefing_on_holiday_when_not_skipping(client, monkeypatch):
     from datetime import datetime
     from app.core.db import connect

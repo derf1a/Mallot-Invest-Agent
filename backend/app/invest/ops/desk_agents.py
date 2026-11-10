@@ -10,12 +10,14 @@
    시가총액 상위·거래대금 상위(중소형) + 가치 상위 + 시장 랭킹 + 운용 지시 종목 + 관심 → screening 점수(시장 국면이 가중치를 바꿈) → LLM 이 IDEAS 개를
    이유와 함께 고른다(SCOUT_SYSTEM). 보유 종목은 표에서 빼고(회의 때 포트폴리오 매니저가 본다), 한 섹터 screening.MAX_PER_SECTOR 개를 코드가
    강제하고, 코드로 고를 때는 급등 직후·과열을 건너뛴다. 고른 것·뺀 것·지나친 것 전부 판단 기록(kind ideas)에.
-4) 리스크 감시(리스크 매니저, watch — LLM 없음): 보유(국내)·발굴 종목의 오늘 등락(일봉 마지막 두 개) → 보유 −HOLD_DROP 이하 급락·
-   +HOLD_JUMP 이상 급등(차익 검토), 발굴 종목 +IDEA_BREAKOUT 이상 급등. 같은 종목·종류는 하루 한 번. 경보는 invest_desk·채팅방(리스크
-   매니저 말풍선)에 남기고, 자동 운용이면 그 종목으로 수시 회의(autopilot.run_adhoc) — 토론 중이면 다음 감시 때 다시(ADHOC_WAIT_MIN 분 안).
-tick(서비스가 20초마다): 자동 운용이 켜져 있고 장이 열리는 날만 — 정규장 시작 PREP_MIN 분 전부터 아침 리서치 한 번(결과 없이 끝났으면
-RETRY_MIN 분 뒤 다시, 하루 MORNING_TRIES 번까지), 장 중 WATCH_MIN 분마다
-리스크 감시, 지수가 마지막 분석 때보다 REFRESH_MOVE 넘게 움직이면 리서치를 다시(하루 MAX_REFRESH 번, REFRESH_GAP_MIN 분 간격).
+4) 리스크 감시(리스크 매니저, watch — LLM 없음): 보유(국내)·발굴 종목의 오늘 등락(일봉 마지막 두 개) → 보유 −drop_pct 이하 급락·
+   +jump_pct 이상 급등(차익 검토), 발굴 종목 +breakout_pct 이상 급등(데스크 설정). 같은 종목·종류는 하루 한 번. 경보는 invest_desk·채팅방(리스크
+   매니저 말풍선)에 남기고, 자동 운용이고 설정 adhoc 이 켜져 있으면 그 종목으로 수시 회의(autopilot.run_adhoc) — 토론 중이면 다음 감시 때
+   다시(ADHOC_WAIT_MIN 분 안).
+tick(서비스가 20초마다): 자동 운용이 켜져 있고 장이 열리는 날만 — 설정 research 가 켜져 있으면 정규장 시작 prep_min 분 전부터 아침 리서치
+한 번(결과 없이 끝났으면 RETRY_MIN 분 뒤 다시, 하루 MORNING_TRIES 번까지), 설정 watch 가 켜져 있으면 장 중 watch_min 분마다
+리스크 감시, 설정 refresh 가 켜져 있으면 지수가 마지막 분석 때보다 REFRESH_MOVE 넘게 움직일 때 리서치를 다시(하루 MAX_REFRESH 번,
+REFRESH_GAP_MIN 분 간격). 설정은 desk.get_config — 화면과 비서(update_desk)가 고친다.
 운용 목표(policy.text)는 세 단계 프롬프트에 모두 들어가고, 선호 섹터는 운용 지시 섹터처럼 [운용 지시] 표시.
 채팅방: 단계마다 그 에이전트의 말풍선 + 카드(invest_assistant_messages, role=agent, meta.desk = market·sector·ideas·alert).
 """
@@ -49,10 +51,7 @@ SECTOR_BOTTOM = 10        # 축소를 고를 수 있게 약한 섹터도 보여 
 MAX_OVERWEIGHT = 4
 MAX_UNDERWEIGHT = 3
 IDEAS = 8
-WATCH_MAX = 20            # 리스크 감시 종목 수
-HOLD_DROP = 0.04
-HOLD_JUMP = 0.06
-IDEA_BREAKOUT = 0.05
+WATCH_MAX = 20            # 리스크 감시 종목 수 (급락·급등 기준은 데스크 설정 drop_pct · jump_pct · breakout_pct)
 ADHOC_WAIT_MIN = 30
 ALERT_KO = {"drop": "보유 종목 급락", "jump": "보유 종목 급등 — 차익 실현 검토", "breakout": "발굴 종목 급등"}
 
@@ -479,7 +478,9 @@ def day_change(p, symbol: str) -> float | None:
 
 
 def watch(conn, p, now: datetime) -> list[dict]:
-    """보유·발굴 종목 중 급변한 것 → [{symbol, name, kind, change, held}] (코드, LLM 없음)."""
+    """보유·발굴 종목 중 급변한 것 → [{symbol, name, kind, change, held}] (코드, LLM 없음). 기준은 데스크 설정."""
+    cfg = desk.get_config(conn)
+    drop, jump, breakout = cfg["drop_pct"] / 100, cfg["jump_pct"] / 100, cfg["breakout_pct"] / 100
     try:
         holdings = trading.account(conn, market=p).summary()["holdings"]
     except (TradeError, MarketError, TossError):
@@ -493,8 +494,8 @@ def watch(conn, p, now: datetime) -> list[dict]:
     for sym, ch in zip(syms, changes):
         if ch is None:
             continue
-        kind = (("drop" if ch <= -HOLD_DROP else "jump" if ch >= HOLD_JUMP else None) if sym in held
-                else "breakout" if ch >= IDEA_BREAKOUT else None)
+        kind = (("drop" if ch <= -drop else "jump" if ch >= jump else None) if sym in held
+                else "breakout" if ch >= breakout else None)
         if kind:
             out.append({"symbol": sym, "name": held.get(sym) or ideas.get(sym) or sym, "kind": kind, "change": round(ch, 4),
                         "held": sym in held})
@@ -506,8 +507,9 @@ def _alert_line(a: dict) -> str:
 
 
 def watch_and_act(conn, p, now: datetime) -> dict:
-    """감시 → 새 경보를 남기고 채팅방에 알린 뒤, 자동 운용이면 그 종목으로 수시 회의를 연다(토론 중이면 다음 감시 때)."""
+    """감시 → 새 경보를 남기고 채팅방에 알린 뒤, 자동 운용이고 수시 회의가 켜져 있으면 그 종목으로 연다(토론 중이면 다음 감시 때)."""
     st = desk.state(conn, now.date())
+    adhoc = desk.get_config(conn)["adhoc"]
     new = [a for a in watch(conn, p, now) if f"{a['symbol']}:{a['kind']}" not in st["alerted"]]
     out: dict = {}
     if new:
@@ -519,11 +521,11 @@ def watch_and_act(conn, p, now: datetime) -> dict:
         cfg = autopilot.get_config(conn)
         _say(conn, "risk", "장 중 점검에서 급변을 찾았어요\n" + "\n".join(f"- {line}" for line in why.values())
              + ("" if not cfg["enabled"] else "\n상시 운용 채널에서 바로 볼게요." if cfg["mode"] == "continuous"
-                else "\n그 종목으로 수시 회의를 요청할게요."),
+                else "\n그 종목으로 수시 회의를 요청할게요." if adhoc else "\n수시 회의는 꺼 두셔서 다음 회의 안건으로 넘길게요."),
              "alert", {"alerts": new, "by": "code"}, None)
         out["alerts"] = new
-        if cfg["mode"] == "continuous":
-            st["pending"] = None  # 상시 운용 채널이 경보(invest_desk)를 읽고 바로 이야기한다
+        if cfg["mode"] == "continuous" or not adhoc:
+            st["pending"] = None  # 상시 운용 채널이 경보(invest_desk)를 읽고 바로 이야기한다 · 수시 회의가 꺼져 있으면 다음 정기 회의 안건으로
     pending = st.get("pending")
     if pending and _minutes(now.strftime("%H:%M")) - _minutes(pending["at"]) <= ADHOC_WAIT_MIN:
         if not autopilot.active_session(conn):
@@ -577,26 +579,29 @@ def tick(conn, now: datetime | None = None, provider=None) -> dict | None:
     start, end = _minutes(sess["start"]), _minutes(sess["end"])
     minute = now.hour * 60 + now.minute
     last_trade = end - autopilot.CLOSE_BEFORE_MIN
+    cfg = desk.get_config(conn)
     st = desk.state(conn, now.date())
     running = desk.research_running(conn)
     tries = st["research"]
-    if (not running and start - desk.PREP_MIN <= minute <= last_trade and not desk.latest(conn, "ideas", now.date())
-            and len(tries) < desk.MORNING_TRIES and (not tries or minute - _minutes(tries[-1]["at"]) >= desk.RETRY_MIN)):
+    if (cfg["research"] and not running and start - cfg["prep_min"] <= minute <= last_trade
+            and not desk.latest(conn, "ideas", now.date()) and len(tries) < desk.MORNING_TRIES
+            and (not tries or minute - _minutes(tries[-1]["at"]) >= desk.RETRY_MIN)):
         return {"research": desk.start_research(conn, "morning", now=now)}  # 오늘 첫 리서치, 또는 결과 없이 끝난 리서치(서버 재시작 등) 다시
-    if not tries:
-        return None
+    if cfg["research"] and not tries:
+        return None  # 장 전 리서치가 먼저 — 감시는 그 뒤
     if not start + autopilot.OPEN_AFTER_MIN <= minute <= last_trade:
         return None
-    if st["last_watch"] and minute - _minutes(st["last_watch"]) < desk.WATCH_MIN:
+    if st["last_watch"] and minute - _minutes(st["last_watch"]) < cfg["watch_min"]:
         return None
     st["last_watch"] = now.strftime("%H:%M:%S")
     desk.put_state(conn, st)
     out: dict = {}
-    refreshes = [r for r in st["research"] if r.get("trigger") == "market_move"]
-    gap_ok = minute - _minutes(st["research"][-1]["at"]) >= desk.REFRESH_GAP_MIN
-    if not running and len(refreshes) < desk.MAX_REFRESH and gap_ok:
+    refreshes = [r for r in tries if r.get("trigger") == "market_move"]
+    gap_ok = not tries or minute - _minutes(tries[-1]["at"]) >= desk.REFRESH_GAP_MIN
+    if cfg["refresh"] and tries and not running and len(refreshes) < desk.MAX_REFRESH and gap_ok:
         why = moved_since(conn, p, now)
         if why:
             out["research"] = desk.start_research(conn, "market_move", note=why, now=now)
-    out.update(watch_and_act(conn, p, now))
+    if cfg["watch"]:
+        out.update(watch_and_act(conn, p, now))
     return out or None

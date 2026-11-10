@@ -219,6 +219,7 @@ function Morning({ onSent }: { onSent: () => void }) {
   const { data, reload } = useLoad(() => investApi.morning(), [])
   const [saved, setSaved] = useState<MorningBriefing | null>(null)
   const [time, setTime] = useState<string | null>(null)
+  const [closeTime, setCloseTime] = useState<string | null>(null)
   const [days, setDays] = useState<string | null>(null)
   const [note, setNote] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -239,12 +240,12 @@ function Morning({ onSent }: { onSent: () => void }) {
   return (
     <section>
       <div className="pilot-sec-head">
-        <h3>아침 브리핑</h3>
-        <span className="muted small">{m.last ? `마지막 ${m.last.slice(5)}` : '아직 보낸 적 없음'}</span>
+        <h3>보고</h3>
+        <span className="muted small">{m.last ? `아침 ${m.last.slice(5)}` : '아침 아직'}{m.close_enabled && ` · 마감 ${m.close_last ? m.close_last.slice(5) : '아직'}`}</span>
       </div>
       <p className="muted small">
-        <b>{m.enabled ? m.summary : '꺼짐'}</b> — 서윤(비서)이 한 페이지 보고서(운영 플랜·운용 지시·투자현황·시장)와 오늘 볼 것을 채팅방에 남겨요.
-        {m.skip_holidays ? ' 휴장일은 건너뛰어요.' : ''} 채팅으로 "보고는 매주 월요일 8시에"처럼 말해도 바뀌어요.
+        <b>{m.enabled || m.close_enabled ? m.summary : '꺼짐'}</b> — 서윤(비서)이 한 페이지 보고서(운영 플랜·운용 지시·투자현황·시장)와 오늘 볼 것을 채팅방에 남겨요.
+        {m.skip_holidays ? ' 휴장일은 건너뛰어요.' : ''} 채팅으로 "보고는 매주 월요일 8시에", "장 끝나고 4시에도 보고해 줘"처럼 말해도 바뀌어요.
       </p>
       <div className="weekday-chips" role="group" aria-label="보고 요일">
         {'월화수목금토일'.split('').map((d, i) => {
@@ -279,7 +280,7 @@ function Morning({ onSent }: { onSent: () => void }) {
         <label className="check">
           <input type="checkbox" checked={m.enabled} disabled={busy}
             onChange={(e) => run(async () => setSaved(await investApi.saveMorning({ enabled: e.target.checked })))} />
-          매일 받기
+          아침 브리핑
         </label>
         <input type="time" value={time ?? m.time} min="05:00" max="12:00" aria-label="아침 브리핑 시각" onChange={(e) => setTime(e.target.value)} />
         {time !== null && time !== m.time && (
@@ -293,6 +294,26 @@ function Morning({ onSent }: { onSent: () => void }) {
           reload()
           onSent()
         }, '채팅방에 보냈어요')}>{busy ? '만드는 중…' : '지금 받아 보기'}</button>
+      </div>
+      <div className="morning-row">
+        <label className="check">
+          <input type="checkbox" checked={m.close_enabled} disabled={busy}
+            onChange={(e) => run(async () => setSaved(await investApi.saveMorning({ close_enabled: e.target.checked })))} />
+          장 마감 보고
+        </label>
+        <input type="time" value={closeTime ?? m.close_time} min="15:30" max="22:00" aria-label="장 마감 보고 시각"
+          onChange={(e) => setCloseTime(e.target.value)} />
+        {closeTime !== null && closeTime !== m.close_time && (
+          <button className="primary" disabled={busy} onClick={() => run(async () => {
+            setSaved(await investApi.saveMorning({ close_time: closeTime }))
+            setCloseTime(null)
+          }, '마감 보고 시각을 바꿨어요')}>저장</button>
+        )}
+        <button disabled={busy} onClick={() => run(async () => {
+          await investApi.sendMorning(true)
+          reload()
+          onSent()
+        }, '채팅방에 보냈어요')}>{busy ? '만드는 중…' : '마감 보고 받아 보기'}</button>
       </div>
       {note && <p className="muted small">{note}</p>}
     </section>

@@ -460,6 +460,20 @@ export interface DeskStatus {
   sector: SectorView | null
   ideas: Ideas | null
   limits: { prep_min: number; watch_min: number; refresh_move: number; max_refresh: number; max_adhoc: number }
+  /** 데스크 설정 — 화면과 비서(채팅)가 고친다. 퍼센트는 % 그대로 (4 = 4%) */
+  config: DeskConfig
+  bounds: Record<'prep_min' | 'watch_min' | 'drop_pct' | 'jump_pct' | 'breakout_pct', [number, number]>
+}
+export interface DeskConfig {
+  research: boolean
+  prep_min: number
+  watch: boolean
+  watch_min: number
+  drop_pct: number
+  jump_pct: number
+  breakout_pct: number
+  adhoc: boolean
+  refresh: boolean
 }
 
 export type DebateScope = 'symbol' | 'sector' | 'portfolio' | 'scan' | 'autopilot'
@@ -706,6 +720,10 @@ export interface MorningBriefing {
   summary: string
   /** 마지막으로 보낸(또는 휴장으로 건너뛴) 날 */
   last: string | null
+  /** 장 마감 보고 — 아침 브리핑과 따로 켜고, 요일 · 날짜 · 휴장일 규칙은 같이 쓴다 (15:30~22:00) */
+  close_enabled: boolean
+  close_time: string
+  close_last: string | null
 }
 
 /** 투자 비서 대화 — 내 말 · 비서 답 · 다른 에이전트 답 · 한 일(운용 지시 정리·판단 시작) */
@@ -1124,6 +1142,7 @@ export const investApi = {
   runAutopilot: () => request<Run>('POST', '/api/invest/autopilot/run'),
   resumeAutopilot: () => request<Run>('POST', '/api/invest/autopilot/resume'),
   desk: () => request<DeskStatus>('GET', '/api/invest/desk'),
+  saveDeskConfig: (body: Partial<DeskConfig>) => request<DeskStatus>('PUT', '/api/invest/desk/config', body),
   policy: () => request<PolicyView>('GET', '/api/invest/policy'),
   holdingIndicators: () =>
     request<{ rows: HoldingIndicator[]; total_assets_krw: number; cash_ratio: number | null; source: string }>('GET', '/api/invest/holdings/indicators'),
@@ -1138,9 +1157,10 @@ export const investApi = {
   addContribution: (c: { date: string; amount: number; note?: string }) => request<Baseline>('POST', '/api/invest/baseline/contributions', c),
   briefing: () => request<Briefing & { text: string }>('GET', '/api/invest/briefing'),
   morning: () => request<MorningBriefing>('GET', '/api/invest/morning-briefing'),
-  saveMorning: (body: { enabled?: boolean; time?: string; weekdays?: number[]; month_days?: number[]; skip_holidays?: boolean }) =>
+  saveMorning: (body: { enabled?: boolean; time?: string; weekdays?: number[]; month_days?: number[]; skip_holidays?: boolean;
+    close_enabled?: boolean; close_time?: string }) =>
     request<MorningBriefing>('PUT', '/api/invest/morning-briefing', body),
-  sendMorning: () => request<AssistantMessage>('POST', '/api/invest/morning-briefing/send'),
+  sendMorning: (close = false) => request<AssistantMessage>('POST', `/api/invest/morning-briefing/send${close ? '?close=true' : ''}`),
   assistantMessages: (after: number) =>
     request<{ messages: AssistantMessage[]; pending: boolean; advice: AdviceStatus }>('GET', `/api/invest/assistant/messages?after=${after}`),
   sayToAssistant: (text: string) =>
