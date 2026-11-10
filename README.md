@@ -27,7 +27,7 @@
 
 ```mermaid
 flowchart LR
-  UI["React UI<br/>Trade · Observe · Settings"] -->|/api| API["FastAPI"]
+  UI["React UI<br/>Operate · Invest · Observe · Settings"] -->|/api| API["FastAPI"]
   subgraph backend
     API --> INV["invest<br/>debate · ops · advice<br/>broker · marketdata · analysis"]
     INV --> LLM["llm<br/>structured · agentic<br/>routes"]
