@@ -87,7 +87,9 @@ class FakeBroker:
         if path == "/api/v1/orders" and method == "POST":
             return self._create(json.loads(data))
         if path == "/api/v1/orders":
-            return self._ok({"orders": [self._view(o) for o in self.orders.values() if o["status"] == "PENDING"]})
+            closed = query.get("status") == "CLOSED"
+            return self._ok({"orders": [self._view(o) for o in reversed(self.orders.values()) if (o["status"] != "PENDING") == closed],
+                             "hasNext": False})
         if path.startswith("/api/v1/orders/"):
             oid = path.split("/")[4]
             o = self.orders.get(oid)
@@ -116,7 +118,8 @@ class FakeBroker:
 
     @staticmethod
     def _view(o: dict) -> dict:
-        return {"orderId": o["id"], "symbol": o["symbol"], "status": o["status"],
+        return {"orderId": o["id"], "symbol": o["symbol"], "status": o["status"], "side": o["side"], "orderType": o["type"],
+                "currency": "KRW",
                 "execution": {"filledQuantity": str(o["filled"]), "averageFilledPrice": str(o["avg"]) if o["avg"] else None,
                               "filledAt": "2026-10-13T11:30:05+09:00" if o["status"] == "FILLED" else None}}
 

@@ -1,5 +1,9 @@
 """거래 기록 — 체결된 매수 · 매도마다 금액 · 지금 가치 · 손익과, 그 주문을 낳은 토론(입장판 · 에이전트 의견 · 트레이더 판단).
 
+- 범위: 앱이 낸 주문(invest_orders) + 토스 계좌의 지난 체결(invest_broker_fills — 앱을 쓰기 전 · 토스 앱에서 직접 한 거래).
+  토스 체결은 import_broker 가 끝난 주문(GET /orders?status=CLOSED)을 쪽마다 받아 쌓는다 — 처음엔 끝까지, 그 뒤엔 새것만.
+  앱 주문과 같은 토스 주문 번호면 앱 주문 하나로 보이고(체결가가 비었으면 토스 값으로 채움), 나머지는 source='toss' 로 시각순에 끼운다.
+
 - 금액 = 체결 수량 × 체결 평균가. 지금 가치 = 체결 수량 × 현재가 (시세를 못 받으면 비운다).
 - 매수 손익 = 지금 가치 − 매수 금액 (평가). 매도 손익 = (매도가 − 단가) × 수량 (실현). 단가는 매도 주문에 적어 둔 토스 보유 평단
   (basis_price) 을 먼저 쓰고, 없으면 이 기록 안 앞선 매수의 이동평균 단가로 잡는다. 둘 다 없으면(평단을 적기 전, 앱 밖에서 산 주식)
@@ -11,12 +15,13 @@
 
 import json
 import sqlite3
+import time
 from functools import lru_cache
 from pathlib import Path
 
 from app.core.db import data_dir
 from app.invest.broker import config, trading
-from app.invest.broker.toss import TossError
+from app.invest.broker.toss import TossClient, TossError
 from app.invest.broker.trading import TradeError
 from app.invest.marketdata import market
 from app.invest.marketdata.market import MarketError
@@ -24,10 +29,15 @@ from app.invest.marketdata.market import MarketError
 LIMIT = 500          # 거래 기록에 보이는 체결 주문 수 (최근 것부터)
 QUOTE_CHUNK = 20     # 현재가는 이만큼씩 나눠 받는다
 EXECUTOR = "trader"  # 트레이더 의견은 decision 으로 따로 보여준다
+IMPORT_PAGES = 50    # 토스 끝난 주문을 한 번에 받는 최대 쪽 수 (한 쪽 100건)
+IMPORT_EVERY = 60    # 토스 체결 가져오기는 이 초마다 한 번 (화면을 새로 고칠 때마다 부르지 않게)
+S_IMPORTED = "invest_broker_fills_complete"  # 끝 쪽까지 한 번 받았나 — 아니면 다음에도 끝까지
+_last_import = 0.0
 
 ORDER_SQL = """
 SELECT o.id, o.created_at, o.filled_at, o.symbol, o.name, o.currency, o.side, o.order_type, o.filled_quantity,
-       o.avg_fill_price, o.price, o.ref_price, o.basis_price, o.status, o.source, o.run_id, o.reason, r.name AS run_name
+       o.avg_fill_price, o.price, o.ref_price, o.basis_price, o.status, o.source, o.run_id, o.reason, r.name AS run_name,
+       o.broker_order_id
 FROM invest_orders o LEFT JOIN runs r ON r.id = o.run_id
 WHERE o.filled_quantity > 0
 ORDER BY o.id
@@ -59,6 +69,81 @@ def _sync(conn: sqlite3.Connection) -> None:
         pass
 
 
+def _num(v: object) -> float | None:
+    try:
+        return float(v) if v not in (None, "") else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _fill_row(o: dict) -> tuple | None:
+    """토스 끝난 주문 하나 → invest_broker_fills 한 줄 (체결이 없으면 None)."""
+    ex = o.get("execution") or {}
+    q = _num(ex.get("filledQuantity")) or 0
+    side = str(o.get("side") or "").lower()
+    if q <= 0 or side not in ("buy", "sell") or not o.get("orderId") or not o.get("symbol"):
+        return None
+    price = _num(ex.get("averageFilledPrice"))
+    amount = _num(ex.get("filledAmount")) or (q * price if price else None)
+    return (str(o["orderId"]), str(o["symbol"]), side, str(o.get("orderType") or "").lower(), o.get("currency") or "KRW", q, price,
+            amount, _num(ex.get("commission")), _num(ex.get("tax")), o.get("orderedAt"), ex.get("filledAt") or o.get("orderedAt"),
+            o.get("status") or "")
+
+
+def import_broker(conn: sqlite3.Connection, client=None, *, force: bool = False) -> int:
+    """토스 계좌의 끝난 주문에서 체결을 받아 쌓는다 → 새로 쌓은 수. 처음(또는 끝까지 못 받았으면) 끝 쪽까지, 그 뒤엔 아는 주문이 나올 때까지.
+    주문을 내지 않는 조회만 한다. 토스 키가 없거나 IMPORT_EVERY 초 안에 다시 부르면 건너뛴다."""
+    global _last_import
+    if client is None and not config.toss_configured():
+        return 0
+    if not force and time.monotonic() - _last_import < IMPORT_EVERY:
+        return 0
+    _last_import = time.monotonic()
+    client = client or TossClient()
+    known = {r[0] for r in conn.execute("SELECT broker_order_id FROM invest_broker_fills")}
+    row = conn.execute("SELECT value FROM settings WHERE key = ?", (S_IMPORTED,)).fetchone()
+    full = not (row and row[0] == "true")
+    added, cursor = 0, None
+    for _ in range(IMPORT_PAGES):
+        orders, cursor = client.closed_orders_page(cursor)
+        fresh = [o for o in orders if str(o.get("orderId")) not in known]
+        for o in fresh:
+            rec = _fill_row(o)
+            if rec:
+                conn.execute("INSERT OR IGNORE INTO invest_broker_fills (broker_order_id, symbol, side, order_type, currency, quantity, price, "
+                             "amount, commission, tax, ordered_at, filled_at, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", rec)
+                known.add(rec[0])
+                added += 1
+        conn.commit()
+        if cursor is None:
+            if full:
+                conn.execute("INSERT INTO settings (key, value) VALUES (?, 'true') ON CONFLICT(key) DO UPDATE SET value = 'true'",
+                             (S_IMPORTED,))
+                conn.commit()
+            break
+        if not full and len(fresh) < len(orders):
+            break  # 아는 주문까지 왔다 — 그 뒤는 이미 받았다
+    return added
+
+
+def _broker_rows(conn: sqlite3.Connection, app_ids: set[str], p) -> tuple[list[dict], dict[str, dict]]:
+    """앱 주문이 아닌 토스 체결 → 거래 행(source='toss'), 그리고 토스 주문 번호 → 체결 (앱 주문의 빈 체결가 채우기)."""
+    fills = [dict(r) for r in conn.execute("SELECT rowid AS rid, * FROM invest_broker_fills")]
+    by_id = {f["broker_order_id"]: f for f in fills}
+    mine = [f for f in fills if f["broker_order_id"] not in app_ids]
+    try:
+        names = p.names(conn, sorted({f["symbol"] for f in mine})) if mine and hasattr(p, "names") else {}
+    except (MarketError, TossError):
+        names = {}
+    rows = [{"id": -f["rid"], "created_at": f["ordered_at"] or "", "filled_at": f["filled_at"], "symbol": f["symbol"],
+             "name": names.get(f["symbol"]) or f["symbol"], "currency": f["currency"], "side": f["side"],
+             "order_type": f["order_type"] if f["order_type"] in ("market", "limit") else "market", "filled_quantity": f["quantity"],
+             "avg_fill_price": f["price"], "price": None, "ref_price": None, "basis_price": None,
+             "status": "filled" if f["status"] == "FILLED" else "partial", "source": "toss", "run_id": None, "reason": "",
+             "run_name": None, "broker_order_id": f["broker_order_id"]} for f in mine]
+    return rows, by_id
+
+
 def _rate(gain: float | None, base: float | None) -> float | None:
     return gain / base if gain is not None and base else None
 
@@ -66,8 +151,19 @@ def _rate(gain: float | None, base: float | None) -> float | None:
 def history(conn: sqlite3.Connection, p=None) -> dict:
     """체결된 주문 목록(최근 것부터) + 종목별 합계 + 전체 합계(원화 종목만)."""
     _sync(conn)
+    try:
+        import_broker(conn)
+    except (MarketError, TossError):
+        pass  # 받아 둔 것만으로 보여준다
+    p = p or market.provider()
     rows = [dict(r) for r in conn.execute(ORDER_SQL).fetchall()]  # 단가는 처음부터 쌓아야 맞다 — 자르는 건 보여줄 때
-    now = _prices(p or market.provider(), sorted({r["symbol"] for r in rows}))
+    outside, fills = _broker_rows(conn, {r["broker_order_id"] for r in rows if r["broker_order_id"]}, p)
+    for r in rows:
+        f = fills.get(r["broker_order_id"] or "")
+        if f and not r["avg_fill_price"]:
+            r["avg_fill_price"] = f["price"]
+    rows = sorted(rows + outside, key=lambda o: (_at(o), o["id"]))
+    now = _prices(p, sorted({r["symbol"] for r in rows}))
     book: dict[str, dict] = {}
     trades: list[dict] = []
     for o in rows:

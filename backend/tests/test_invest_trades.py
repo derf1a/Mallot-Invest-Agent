@@ -126,3 +126,54 @@ def test_sell_order_records_broker_avg_price(client, broker, conn, at_open):  # 
     assert sold["basis_from"] == "broker" and sold["realized"] == pytest.approx((sold["price"] - 50_000) * 2)
     buy = _order(client, quantity=1)                                              # 매수에는 적지 않는다
     assert conn.execute("SELECT basis_price FROM invest_orders WHERE id = ?", (buy.json()["id"],)).fetchone()[0] is None
+
+
+class Closed:
+    """토스 끝난 주문을 쪽마다 돌려주는 가짜 (최근 것부터, 한 쪽 2건)."""
+
+    def __init__(self, orders: list[dict]):
+        self.orders = orders
+        self.pages = 0
+
+    def closed_orders_page(self, cursor=None, limit=100):
+        self.pages += 1
+        i = int(cursor or 0)
+        nxt = i + 2 if i + 2 < len(self.orders) else None
+        return self.orders[i:i + 2], (str(nxt) if nxt is not None else None)
+
+
+def _closed(oid, symbol, side, qty, price, at, status="FILLED"):
+    return {"orderId": oid, "symbol": symbol, "side": side.upper(), "orderType": "LIMIT", "status": status, "currency": "KRW",
+            "orderedAt": at, "execution": {"filledQuantity": str(qty), "averageFilledPrice": str(price),
+                                           "filledAmount": str(qty * price), "filledAt": at, "commission": "15", "tax": "0"}}
+
+
+def test_import_broker_pages_once_then_only_new(conn):  # noqa: F811
+    history = [_closed("t4", "005930", "sell", 3, 130, "2025-03-02T10:00:00+09:00"),
+               _closed("t3", "005930", "buy", 0, 0, "2025-03-01T10:00:00+09:00", status="CANCELED"),  # 체결 없음 → 뺀다
+               _closed("t2", "005930", "buy", 5, 110, "2025-02-01T10:00:00+09:00"),
+               _closed("t1", "005930", "buy", 5, 90, "2024-01-02T10:00:00+09:00")]
+    fake = Closed(history)
+    assert trades.import_broker(conn, fake, force=True) == 3 and fake.pages == 2          # 처음엔 끝 쪽까지
+    fake.orders = [_closed("t5", "000660", "buy", 1, 200, "2025-04-01T10:00:00+09:00"), *history]
+    fake.pages = 0
+    assert trades.import_broker(conn, fake, force=True) == 1 and fake.pages == 1          # 아는 주문이 나오면 멈춤
+    assert trades.import_broker(conn, fake) == 0                                          # IMPORT_EVERY 초 안이면 건너뜀
+
+
+def test_history_includes_past_broker_fills_with_their_prices(conn, monkeypatch):  # noqa: F811
+    """앱 밖 · 앱을 쓰기 전 토스 거래도 그때 체결가로 보이고, 그 매수 단가로 나중 매도의 실현 손익을 낸다."""
+    trades.import_broker(conn, Closed([_closed("t2", "005930", "buy", 5, 110, "2025-02-01T10:00:00+09:00"),
+                                       _closed("t1", "005930", "buy", 5, 90, "2024-01-02T10:00:00+09:00"),
+                                       _closed("app-1", "005930", "sell", 4, 120, "2026-11-10T09:30:00+09:00")]), force=True)
+    app = _fill(conn, "005930", "sell", 4, 120, name="삼성전자")                           # 앱이 낸 같은 주문 (토스 번호 app-1)
+    conn.execute("UPDATE invest_orders SET broker_order_id = 'app-1', avg_fill_price = NULL WHERE id = ?", (app,))
+    conn.commit()
+    monkeypatch.setattr(trades, "import_broker", lambda *a, **k: 0)
+    h = trades.history(conn, Quotes({"005930": 150}))
+    assert [(t["source"], t["side"], t["price"]) for t in h["trades"]] == [("agent", "sell", 120), ("toss", "buy", 110), ("toss", "buy", 90)]
+    sell = h["trades"][0]
+    assert sell["id"] == app and sell["basis_price"] == 100 and sell["realized"] == 80 and sell["basis_from"] == "history"
+    assert h["trades"][1]["at"] == "2025-02-01 10:00:00" and h["trades"][1]["id"] < 0 and h["trades"][1]["pnl"] == 5 * 150 - 550
+    s = h["symbols"][0]
+    assert (s["buy_count"], s["sell_count"], s["held_quantity"], s["unknown_sold"]) == (2, 1, 6, 0)

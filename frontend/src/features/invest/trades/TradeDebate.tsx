@@ -1,6 +1,6 @@
 /**
  * 거래 기록 > 펼친 행 — 이 주문을 낳은 토론. 안건 → 입장판 결과(매수 · 매도 무게, 머릿수) → 에이전트별 마지막 의견 → 트레이더 판단 · 위험 메모 → 주문 검사.
- * 열 때 한 번 불러온다 (/api/invest/trades/{id}/debate). 직접 낸 주문은 토론 없이 근거 · 검사만.
+ * 열 때 한 번 불러온다 (/api/invest/trades/{id}/debate). 직접 낸 주문은 토론 없이 근거 · 검사만, 토스에서 한 거래는 체결 내용만.
  */
 import { Link } from 'react-router-dom'
 import { useLoad } from '../../../shared/useLoad'
@@ -10,6 +10,18 @@ import { investApi, type Trade, type TradeDebate, type TradeOpinion } from '../a
 import { STANCE_LABEL } from '../format'
 
 export default function TradeDebateView({ trade, people }: { trade: Trade; people: Map<string, Person> }) {
+  if (trade.source === 'toss') {
+    return (
+      <div className="trade-debate">
+        <p className="small"><b>토스에서 직접 한 거래</b>예요 — 앱 밖(또는 앱을 쓰기 전)에 체결돼 토스 체결 내역에서 가져왔어요. 에이전트 토론은 없어요.</p>
+        <p className="small muted">체결 {trade.at.slice(0, 16)} · {trade.quantity}주 · 체결가 {trade.price?.toLocaleString() ?? '–'}{trade.currency === 'KRW' ? '원' : ` ${trade.currency}`}</p>
+      </div>
+    )
+  }
+  return <Debate trade={trade} people={people} />
+}
+
+function Debate({ trade, people }: { trade: Trade; people: Map<string, Person> }) {
   const { data, error } = useLoad(() => investApi.tradeDebate(trade.id), [trade.id])
   return (
     <div className="trade-debate">

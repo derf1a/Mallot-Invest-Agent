@@ -343,6 +343,16 @@ class TossClient:
                                    "limit": min(limit, 100) if status == "CLOSED" else None})
         return [o for o in (result or {}).get("orders") or [] if isinstance(o, dict)] if isinstance(result, dict) else []
 
+    def closed_orders_page(self, cursor: str | None = None, limit: int = 100) -> tuple[list[dict], str | None]:
+        """끝난 주문 한 쪽 (최근 것부터) → (주문들, 다음 쪽 cursor — 없으면 None)."""
+        result = self.call("GET", "/api/v1/orders", group="ORDER_HISTORY", account=True,
+                           params={"status": "CLOSED", "limit": min(limit, 100), "cursor": cursor})
+        if not isinstance(result, dict):
+            return [], None
+        rows = [o for o in result.get("orders") or [] if isinstance(o, dict)]
+        nxt = result.get("nextCursor") if result.get("hasNext") else None
+        return rows, (str(nxt) if nxt else None)
+
     def order(self, order_id: str) -> dict:
         result = self.call("GET", f"/api/v1/orders/{urllib.parse.quote(order_id, safe='')}", group="ORDER_HISTORY",
                            account=True)

@@ -295,4 +295,24 @@ MIGRATIONS: list[str] = [
     """
     ALTER TABLE invest_orders ADD COLUMN basis_price REAL;
     """,
+    # v4 (거래 기록): 토스 계좌의 지난 체결 — 앱을 쓰기 전 · 앱 밖에서 한 거래도 그때 가격으로 (app/invest/ops/trades.py import_broker)
+    """
+    CREATE TABLE invest_broker_fills (
+        broker_order_id TEXT    PRIMARY KEY,
+        symbol          TEXT    NOT NULL,
+        side            TEXT    NOT NULL CHECK (side IN ('buy', 'sell')),
+        order_type      TEXT    NOT NULL DEFAULT '',
+        currency        TEXT    NOT NULL DEFAULT 'KRW',
+        quantity        REAL    NOT NULL,             -- 체결 수량
+        price           REAL,                         -- 체결 평균가
+        amount          REAL,                         -- 체결 금액
+        commission      REAL,
+        tax             REAL,
+        ordered_at      TEXT,
+        filled_at       TEXT,
+        status          TEXT    NOT NULL DEFAULT '',  -- 토스 상태 (FILLED · CANCELED 일부 체결 …)
+        synced_at       TEXT    NOT NULL DEFAULT (datetime('now', 'localtime'))
+    );
+    CREATE INDEX idx_invest_broker_fills_at ON invest_broker_fills (filled_at);
+    """,
 ]
