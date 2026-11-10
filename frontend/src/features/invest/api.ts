@@ -1114,6 +1114,8 @@ export const investApi = {
   messages: (id: number, after: number) => request<SessionMessages>('GET', `/api/invest/agent-sessions/${id}/messages?after=${after}`),
 
   autopilot: () => request<AutopilotStatus>('GET', '/api/invest/autopilot'),
+  /** 사이드바 표시용 — 켜짐 여부 · 운용 방식만 */
+  autopilotSwitch: () => request<{ enabled: boolean; mode: 'continuous' | 'meetings' }>('GET', '/api/invest/autopilot/switch'),
   saveAutopilot: (body: { enabled?: boolean; slots?: string[]; max_extra?: number; flexible?: boolean; mode?: 'continuous' | 'meetings' }) =>
     request<AutopilotStatus>('PUT', '/api/invest/autopilot', body),
   addIntent: (text: string) => request<AutopilotStatus>('POST', '/api/invest/autopilot/intents', { text }),

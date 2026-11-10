@@ -36,6 +36,13 @@
   letter-spacing: -0.005em;
 }
 .nav-link .nav-icon { display: inline-flex; opacity: 0.75; }
+.nav-badge {
+  margin-left: auto; display: inline-flex; align-items: center; gap: 4px; padding: 1px 7px; border-radius: 999px;
+  background: var(--accent-soft); color: var(--accent); font-family: var(--font-body); font-size: 0.7rem; font-weight: 650;
+}
+.nav-badge-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--pos); animation: nav-pulse 2s ease-in-out infinite; }
+@keyframes nav-pulse { 50% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) { .nav-badge-dot { animation: none; } }
 .nav-link:hover { background: var(--border); }
 .nav-link.active { background: var(--accent-soft); color: var(--accent); font-weight: 650; }
 .nav-link.active .nav-icon { opacity: 1; }

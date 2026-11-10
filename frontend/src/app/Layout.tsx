@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
+import { investApi } from '../features/invest/api'
 import { systemApi } from '../features/settings/api'
 import { useLoad } from '../shared/useLoad'
 import BrandMark from './BrandMark'
@@ -9,6 +10,8 @@ interface NavItem {
   to: string
   label: string
   icon: ReactNode
+  /** 오른쪽에 붙는 작은 상태 표시 (예: 자동 운용) */
+  badge?: ReactNode
 }
 
 interface NavSection {
@@ -16,28 +19,51 @@ interface NavSection {
   items: NavItem[]
 }
 
-/** 메뉴 — 위는 매매, 아래는 에이전트를 들여다보는 화면 (Observe), 맨 아래 작게 설정 */
-const SECTIONS: NavSection[] = [
-  {
-    title: 'Trade',
-    items: [
-      { to: '/invest/ai', label: 'AI Trading', icon: <AiIcon /> },
-      { to: '/invest', label: 'Market', icon: <InvestIcon /> },
-      { to: '/invest/portfolio', label: 'Portfolio', icon: <PortfolioIcon /> },
-      { to: '/invest/trades', label: 'Trades', icon: <TradesIcon /> },
-      { to: '/invest/team', label: 'Team', icon: <TeamIcon /> },
-    ],
-  },
-  {
-    title: 'Observe',
-    items: [
-      { to: '/observe/agents', label: 'Agents', icon: <AgentsIcon /> },
-      { to: '/observe/graph', label: 'Graph', icon: <GraphIcon /> },
-      { to: '/observe/traces', label: 'Traces', icon: <TraceIcon /> },
-    ],
-  },
-]
+/**
+ * 메뉴 — 무엇을 하는 화면인지로 나눈다.
+ * Operate: 에이전트에게 맡기는 운용(채팅방 · 팀), Invest: 내가 보는 시장 · 계좌 · 거래, Observe: 에이전트를 들여다보기. 맨 아래 작게 설정.
+ */
+function sections(pilot: ReactNode): NavSection[] {
+  return [
+    {
+      title: 'Operate',
+      items: [
+        { to: '/invest/ai', label: 'AI Trading', icon: <AiIcon />, badge: pilot },
+        { to: '/invest/team', label: 'Team', icon: <TeamIcon /> },
+      ],
+    },
+    {
+      title: 'Invest',
+      items: [
+        { to: '/invest', label: 'Market', icon: <InvestIcon /> },
+        { to: '/invest/portfolio', label: 'Portfolio', icon: <PortfolioIcon /> },
+        { to: '/invest/trades', label: 'Trades', icon: <TradesIcon /> },
+      ],
+    },
+    {
+      title: 'Observe',
+      items: [
+        { to: '/observe/agents', label: 'Agents', icon: <AgentsIcon /> },
+        { to: '/observe/graph', label: 'Graph', icon: <GraphIcon /> },
+        { to: '/observe/traces', label: 'Traces', icon: <TraceIcon /> },
+      ],
+    },
+  ]
+}
 const UTILITY: NavItem[] = [{ to: '/settings', label: 'Settings', icon: <SettingsIcon /> }]
+const MODE_KO = { continuous: '상시', meetings: '회의' } as const
+
+/** 자동 운용 켜짐 표시 — 꺼져 있으면 아무것도 붙이지 않는다 */
+function PilotBadge({ on, mode }: { on: boolean; mode: keyof typeof MODE_KO }) {
+  if (!on) return null
+  const tip = `자동 운용 켜짐 · ${mode === 'continuous' ? '상시 운용' : '정기 회의'}`
+  return (
+    <span className="nav-badge" title={tip} aria-label={tip}>
+      <span className="nav-badge-dot" />
+      {MODE_KO[mode]}
+    </span>
+  )
+}
 
 function Wordmark() {
   return (
@@ -57,6 +83,9 @@ export default function Layout({ onLogout, viewer }: { onLogout?: () => void; vi
   const [menuOpen, setMenuOpen] = useState(false)
   const location = useLocation()
   const { data: health } = useLoad(() => systemApi.health().catch(() => null), [])
+  // 화면을 옮길 때마다 다시 본다 — 채팅으로 켜고 꺼도 다음 이동 때 맞춰진다
+  const { data: pilot } = useLoad(() => investApi.autopilotSwitch().catch(() => null), [location.pathname])
+  const SECTIONS = sections(pilot ? <PilotBadge on={pilot.enabled} mode={pilot.mode} /> : null)
 
   const all = [...SECTIONS.flatMap((s) => s.items), ...UTILITY]
   const current = all.find((item) => item.to === location.pathname)
@@ -64,6 +93,7 @@ export default function Layout({ onLogout, viewer }: { onLogout?: () => void; vi
     <NavLink key={item.to} to={item.to} end className={`nav-link${kind ? ` ${kind}` : ''}`} onClick={() => setMenuOpen(false)}>
       <span className="nav-icon">{item.icon}</span>
       <span>{item.label}</span>
+      {item.badge}
     </NavLink>
   )
 
