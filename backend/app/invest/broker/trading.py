@@ -70,6 +70,14 @@ class TossAccount:
     def sellable(self, symbol: str) -> float:
         return self._call(lambda: self.client.sellable_quantity(symbol)) or 0.0
 
+    def avg_price(self, symbol: str) -> float | None:
+        """지금 보유 평단 — 매도 주문에 같이 적어 거래 기록의 실현 손익을 낸다. 못 받으면 None (주문은 막지 않는다)."""
+        try:
+            items = self.client.holdings().get("items") or []
+        except Exception:  # noqa: BLE001 — 기록용 값이라 어떤 실패도 주문을 막으면 안 된다
+            return None
+        return next((num(i.get("averagePurchasePrice")) for i in items if i.get("symbol") == symbol), None)
+
     def summary(self) -> dict:
         self.sync()
         raw = self._call(self.client.holdings)
@@ -257,20 +265,21 @@ def place_order(conn: sqlite3.Connection, *, symbol: str, side: str, order_type:
                     reason, e.checks, error=str(e))
         raise
     status = "pending_approval" if require_approval else "open"
+    basis = acct.avg_price(symbol) if side == "sell" and hasattr(acct, "avg_price") else None
     order_id = _insert(conn, info, symbol, side, order_type, quantity, price, ref, status, source, run_id,
-                       reason, checks)
+                       reason, checks, basis=basis)
     if not require_approval:
         acct.submit(get_order(conn, order_id))
     return get_order(conn, order_id)
 
 
 def _insert(conn, info, symbol, side, order_type, quantity, price, ref, status, source, run_id, reason, checks,
-            error=None) -> int:
+            error=None, basis=None) -> int:
     cur = conn.execute(
         "INSERT INTO invest_orders (symbol, name, currency, side, order_type, quantity, price, ref_price, status, "
-        "source, run_id, reason, checks_json, error) VALUES (?, ?, 'KRW', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "source, run_id, reason, checks_json, error, basis_price) VALUES (?, ?, 'KRW', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (symbol, info.get("name") or "", side, order_type, float(quantity), price, ref, status, source, run_id,
-         reason[:2000], json.dumps(checks, ensure_ascii=False), error))
+         reason[:2000], json.dumps(checks, ensure_ascii=False), error, basis))
     conn.commit()
     return cur.lastrowid
 

@@ -291,4 +291,8 @@ MIGRATIONS: list[str] = [
     CREATE INDEX idx_trace_spans_run ON trace_spans (run_id);
     CREATE INDEX idx_trace_spans_start ON trace_spans (start_ms);
     """,
+    # v3 (거래 기록): 매도할 때의 토스 보유 평단 — 앱을 쓰기 전부터 갖고 있던 주식도 실현 손익을 낼 수 있게 (app/invest/ops/trades.py)
+    """
+    ALTER TABLE invest_orders ADD COLUMN basis_price REAL;
+    """,
 ]
