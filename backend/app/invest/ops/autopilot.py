@@ -18,8 +18,8 @@
   리서치가 돌고 있으면 기다린다. 수시 회의(run_adhoc, kind=risk): 리스크 감시가 급변을 찾으면 그 종목으로 바로 — 하루 MAX_ADHOC 번.
 - 운용 방식(mode): continuous(상시 운용, 기본) — 정기 회의 없이 자동 판단 시간 동안 상시 운용 채널(stream.py, agent_action
   params.stream) 하나가 돌며 에이전트들이 계속 이야기하고 트레이더가 언제든 주문한다. tick 은 채널이 없으면 열고(서버 재시작으로
-  끊기거나 꺼졌다 다시 켜지면 다시 — 하루 MAX_STREAMS 번, 사용자가 중지하면 그날은 다시 열지 않음), 지금 판단·비서 지시는 그
-  채널에 관리자 말로 넣는다. meetings(정기 회의) — 아래 고정 시각·AI 추가·수시 회의.
+  끊기거나 꺼졌다 다시 켜지면 언제나 다시, 채널이 스스로 실패하면 MAX_STREAMS 번까지, 사용자가 중지하면 그날은 다시 열지 않음 —
+  멈춘 채널은 화면의 재개(resume_stream)로 다시 연다), 지금 판단·비서 지시는 그 채널에 관리자 말로 넣는다. meetings(정기 회의) — 아래 고정 시각·AI 추가·수시 회의.
 - 회의마다 안건(agenda)·꼭 볼 종목(focus)을 붙일 수 있다 — 일정 담당 AI(add·move)와 비서(schedule_meeting, 하루 MAX_ASSISTANT 번)가
   정하고, 남은 회의를 취소(cancel)할 수도 있다. 안건은 그 회의의 모든 에이전트 프롬프트·후보 고르기에 들어간다.
 """
@@ -40,7 +40,7 @@ from app.invest.marketdata import market
 from app.invest.marketdata.market import MarketError
 from app.llm.client import structured
 from app.llm.routes import as_agent
-from app.runs.runner import run_dict, start_run
+from app.runs.runner import INTERRUPTED, run_dict, start_run
 
 SWITCH_ENV = "MIA_AUTOPILOT"  # 켜기·끄기는 .env 에서 (switch_on)
 SWITCH_ON = {"1", "true", "yes", "on"}
@@ -49,7 +49,7 @@ S_INTENTS = "invest_autopilot_intents"
 S_PLAN = "invest_autopilot_plan"
 DEFAULT_CONFIG = {"enabled": False, "slots": ["09:10", "12:30", "15:00"], "max_extra": 3, "flexible": True, "mode": "continuous"}
 MODES = {"continuous": "상시 운용 — 정기 회의 없이 장 내내 대화, 트레이더는 언제든 주문", "meetings": "정기 회의 — 정해 둔 시각에 토론"}
-MAX_STREAMS = 3        # 상시 운용 채널을 하루에 여는 최대 (끊긴 뒤 다시 열기 포함)
+MAX_STREAMS = 3        # 상시 운용 채널이 스스로 실패해 끊기면 다시 여는 최대 (서버 재시작으로 끊긴 건 세지 않음 · 재개하면 다시 셈)
 MAX_SLOTS = 6
 MAX_EXTRA = 6
 MAX_INTENTS = 20
@@ -243,10 +243,13 @@ def schedule(cfg: dict, plan: dict) -> list[dict]:
 
 
 def _record(conn: sqlite3.Connection, entry: dict, status: str, *, now: datetime, run_id: int | None = None,
-            note: str | None = None) -> dict:
-    """일정 하나의 결과를 남긴다 — 그사이 세션이 일정을 바꿨을 수 있어(AI 추가·이동) 저장 직전에 다시 읽는다."""
+            note: str | None = None, by: str | None = None) -> dict:
+    """일정 하나의 결과를 남긴다 — 그사이 세션이 일정을 바꿨을 수 있어(AI 추가·이동) 저장 직전에 다시 읽는다.
+    by = 'user' 면 관리자가 연 것 (상시 운용 채널의 다시 열기 횟수를 거기서부터 다시 센다)."""
     rec = {"key": entry["key"], "time": entry["time"], "kind": entry["kind"], "status": status, "run_id": run_id,
            "note": note, "at": now.strftime("%H:%M:%S")}
+    if by:
+        rec["by"] = by
     plan = load_plan(conn, now.date())
     plan["log"] = [x for x in plan["log"] if x["key"] != entry["key"]] + [rec]
     _put(conn, S_PLAN, plan)
@@ -335,29 +338,53 @@ def is_stream(run: dict | None) -> bool:
     return bool(run and (run.get("params") or {}).get("stream"))
 
 
-def _start_stream(conn: sqlite3.Connection, now: datetime, note: str = "") -> int:
+def _start_stream(conn: sqlite3.Connection, now: datetime, note: str = "", by: str | None = None) -> int:
     entry = {"key": f"stream:{now.strftime('%H:%M:%S')}", "time": now.strftime("%H:%M"), "kind": "stream"}
     name = f"상시 운용 · {now.strftime('%m-%d')}"
     run_id = start_run(conn, "agent_action", {"scope": "autopilot", "autopilot": True, "stream": True, "slot": entry["key"],
                                               "trigger": "stream", "note": note, "label": "상시 운용"}, name=name)
-    _record(conn, entry, "started", now=now, run_id=run_id, note="정기 회의 없이 장 내내 대화 · 트레이더는 언제든 주문")
+    _record(conn, entry, "started", now=now, run_id=run_id, by=by,
+            note="관리자가 채널을 열었어요" if by == "user" else "정기 회의 없이 장 내내 대화 · 트레이더는 언제든 주문")
     return run_id
 
 
+def _stream_halt(conn: sqlite3.Connection, plan: dict) -> tuple[str, str, int | None] | None:
+    """오늘 상시 운용 채널을 스스로 열지 않는 이유 → (상태, 문장, 마지막 실행 id). 열어도 되면 None.
+    상태: running(돌고 있음) · stopped(관리자 중지 · 오류로 여러 번 끊김 — 재개로만) · closed(장 끝까지 함).
+    서버 재시작으로 끊긴 건 횟수에 세지 않고, 관리자가 마지막으로 연(by=user) 뒤부터 센다."""
+    opened = [x for x in plan["log"] if x["kind"] == "stream" and x["status"] == "started" and x.get("run_id")]
+    if not opened:
+        return None
+    since = max((i for i, x in enumerate(opened) if x.get("by") == "user"), default=0)
+    recent = opened[since:]
+    ids = [x["run_id"] for x in recent]
+    rows = {r["id"]: r for r in conn.execute(f"SELECT id, status, error, summary_json FROM runs WHERE id IN ({','.join('?' * len(ids))})",
+                                             ids)}
+    last_id = ids[-1]
+    last = rows.get(last_id)
+    if last is None:
+        return None  # 실행 기록을 지웠다 — 돌고 있지 않으니 다시 연다
+    if last["status"] in ("queued", "running"):
+        return "running", "상시 운용 채널이 돌고 있어요", last_id
+    if last["status"] == "cancelled":
+        return "stopped", "관리자가 채널을 중지했어요", last_id
+    try:
+        ended = json.loads(last["summary_json"] or "{}").get("end")
+    except ValueError:
+        ended = None
+    if last["status"] == "succeeded" and ended == "closed":
+        return "closed", "오늘 장 끝까지 운용했어요", last_id
+    failures = sum(1 for i in ids if (r := rows.get(i)) and r["status"] == "failed" and r["error"] != INTERRUPTED)
+    if failures >= MAX_STREAMS:
+        return "stopped", f"채널이 오류로 {failures}번 끊겨 멈췄어요 — 실행 기록에서 오류를 확인해 주세요", last_id
+    return None
+
+
 def _stream_tick(conn: sqlite3.Connection, now: datetime, provider=None) -> dict | None:
-    """상시 운용: 자동 판단 시간 안인데 채널이 돌고 있지 않으면 연다. 끊겼으면(실패·꺼졌다 켜짐) 다시, 사용자가 중지했으면 그날은 그대로."""
-    plan = load_plan(conn, now.date())
-    opened = [x for x in plan["log"] if x["kind"] == "stream" and x["status"] == "started"]
-    if opened:
-        last = conn.execute("SELECT status, summary_json FROM runs WHERE id = ?", (opened[-1]["run_id"],)).fetchone()
-        if last is None or last["status"] in ("queued", "running") or last["status"] == "cancelled":
-            return None
-        try:
-            ended = json.loads(last["summary_json"] or "{}").get("end")
-        except ValueError:
-            ended = None
-        if ended == "closed" or len(opened) >= MAX_STREAMS:
-            return None  # 오늘 장 끝까지 했거나 다시 열 수 있는 횟수를 다 씀
+    """상시 운용: 자동 판단 시간 안인데 채널이 돌고 있지 않으면 연다. 끊겼으면(서버 재시작 · 꺼졌다 켜짐 · 오류) 다시,
+    사용자가 중지했거나 오류가 거듭되면(_stream_halt) 재개할 때까지 그대로."""
+    if _stream_halt(conn, load_plan(conn, now.date())):
+        return None
     if blocked(conn):
         return None
     try:
@@ -372,6 +399,46 @@ def _stream_tick(conn: sqlite3.Connection, now: datetime, provider=None) -> dict
             return None  # 다른 토론이 끝나면 연다
         run_id = _start_stream(conn, now)
     return {"time": now.strftime("%H:%M"), "status": "started", "run_id": run_id, "note": "상시 운용 채널을 열었어요"}
+
+
+def resume_stream(conn: sqlite3.Connection, now: datetime | None = None, provider=None) -> int:
+    """멈춘 상시 운용 채널을 다시 연다 (화면의 재개) — 관리자 중지 · 오류로 거듭 끊김도 풀고, 다시 열기 횟수를 여기서부터 다시 센다.
+    켜기·끄기처럼 PIN 은 묻지 않는다. 주문 가능 · 자동 판단 시간 검사는 그대로."""
+    cfg = get_config(conn)
+    if not cfg["enabled"]:
+        raise AutopilotError("자동 운용이 꺼져 있어요 — 먼저 켜 주세요", 409)
+    if cfg["mode"] != "continuous":
+        raise AutopilotError("상시 운용 방식일 때만 재개할 수 있어요", 409)
+    now = now or market.now_kst()
+    _check_now(conn, now, provider)
+    with SESSION_LOCK:
+        running = active_session(conn)
+        if running:
+            raise AutopilotError("상시 운용 채널이 이미 돌고 있어요" if is_stream(running)
+                                 else f"진행 중인 토론(#{running['id']})이 끝나면 열 수 있어요", 409)
+        return _start_stream(conn, now, by="user")
+
+
+def stream_state(conn: sqlite3.Connection, now: datetime, window: tuple[str, str] | None, why_blocked: str | None) -> dict | None:
+    """화면용 상시 운용 채널 상태 — state: running · stopped · closed · waiting, note, run_id, can_resume. 상시 운용이 아니면 None."""
+    cfg = get_config(conn)
+    if not cfg["enabled"] or cfg["mode"] != "continuous":
+        return None
+    minute = now.hour * 60 + now.minute
+    in_window = window is not None and _minutes(window[0]) <= minute < _minutes(window[1])
+    halt = _stream_halt(conn, load_plan(conn, now.date()))
+    if halt:
+        state, note, run_id = halt
+    elif why_blocked:
+        state, note, run_id = "waiting", why_blocked, None
+    elif not in_window:
+        state, note, run_id = "waiting", ("휴장일이에요" if window is None else f"자동 판단 시간({window[0]}~{window[1]})이 되면 열어요"), None
+    elif (other := active_session(conn)) and not is_stream(other):
+        state, note, run_id = "waiting", f"진행 중인 토론(#{other['id']})이 끝나면 열어요", other["id"]
+    else:
+        state, note, run_id = "waiting", "곧 열어요 (20초 안)", None
+    return {"state": state, "note": note, "run_id": run_id,
+            "can_resume": state == "stopped" and in_window and not why_blocked}
 
 
 def post_to_stream(conn: sqlite3.Connection, text: str) -> int | None:
@@ -413,7 +480,7 @@ def run_now(conn: sqlite3.Connection, now: datetime | None = None, provider=None
             running = active_session(conn)
             if running:
                 raise AutopilotError(f"이미 진행 중인 토론이 있습니다 (#{running['id']})", 409)
-            return _start_stream(conn, now, note=note)
+            return _start_stream(conn, now, note=note, by="user")
     _check_now(conn, now, provider)
     entry = {"key": f"manual:{now.strftime('%H:%M:%S')}", "time": now.strftime("%H:%M"), "kind": "manual"}
     with SESSION_LOCK:
@@ -593,10 +660,12 @@ def status(conn: sqlite3.Connection, now: datetime | None = None, provider=None)
     entries = schedule(cfg, plan)
     minute = now.hour * 60 + now.minute
     upcoming = next((e for e in entries if e["status"] == "pending" and _minutes(e["time"]) >= minute), None)
+    why = blocked(conn)
     return {"config": cfg, "intents": intents(conn), "today": {"date": plan["date"], "entries": entries,
             "extra_used": len(plan["extra"])}, "window": window, "window_note": window_note,
             "next": upcoming if cfg["enabled"] and cfg["mode"] != "continuous" else None,
-            "blocked": f"{why} — 일정이 와도 건너뛰어요" if (why := blocked(conn)) else None,
+            "stream": stream_state(conn, now, window, why),
+            "blocked": f"{why} — 일정이 와도 건너뛰어요" if why else None,
             "limits": {"open_after_min": OPEN_AFTER_MIN, "close_before_min": CLOSE_BEFORE_MIN, "grace_min": GRACE_MIN,
                        "min_gap_min": MIN_GAP_MIN, "lead_min": LEAD_MIN, "max_intents": MAX_INTENTS, "max_adhoc": MAX_ADHOC,
                        "max_assistant": MAX_ASSISTANT}}

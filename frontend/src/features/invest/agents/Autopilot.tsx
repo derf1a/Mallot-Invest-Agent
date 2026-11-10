@@ -19,6 +19,7 @@ const MODES = [
 const kindOf = (e: AutopilotEntry) =>
   e.kind === 'fixed' && e.origin !== e.time ? `${e.by === 'assistant' ? '비서' : 'AI'} 가 옮김 (${e.origin})`
     : e.kind === 'extra' && e.by === 'assistant' ? '비서 추가' : KIND[e.kind]
+const STREAM: Record<NonNullable<AutopilotStatus['stream']>['state'], string> = { running: '채널 돌고 있음', stopped: '채널 멈춤', closed: '오늘 운용 끝', waiting: '채널 기다리는 중' }
 const STATUS: Record<AutopilotEntry['status'], string> = { pending: '예정', started: '판단함', skipped: '건너뜀', missed: '놓침' }
 
 export default function Autopilot({ status, roster, advice, onAdviceStarted, onChanged, onOpenSession, onBriefingSent, onClose }: {
@@ -88,6 +89,22 @@ export default function Autopilot({ status, roster, advice, onAdviceStarted, onC
           </button>
         ))}
       </div>
+      {status.stream && (
+        <div className={`pilot-stream ${status.stream.state}`}>
+          <span className="small">
+            <b>{STREAM[status.stream.state]}</b> · {status.stream.note}
+            {status.stream.run_id && <> · <button className="link-button small" onClick={() => onOpenSession(status.stream!.run_id!)}>#{status.stream.run_id}</button></>}
+          </span>
+          {!readOnly && status.stream.state === 'stopped' && (
+            <button className="primary" disabled={busy || !status.stream.can_resume} title={status.stream.can_resume ? undefined : '자동 판단 시간 안이고 주문할 수 있을 때 재개할 수 있어요'}
+              onClick={() => act(async () => {
+                const run = await investApi.resumeAutopilot()
+                onOpenSession(run.id)
+                return investApi.autopilot()
+              })}>재개</button>
+          )}
+        </div>
+      )}
       {status.blocked && <p className="alert warn small">{status.blocked}</p>}
       {status.window_note && <p className="muted small">{status.window_note}</p>}
       {error && <p className="error small">{error}</p>}

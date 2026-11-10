@@ -15,7 +15,7 @@ from app.invest.jobs import agent_action
 from app.invest.marketdata import market
 from app.invest.marketdata.market import SampleMarket
 from app.invest.ops import autopilot, desk, desk_agents
-from app.runs.runner import load_run
+from app.runs.runner import INTERRUPTED, load_run
 from tests.test_invest import PIN, at_open  # noqa: F401
 from tests.test_invest_ai import Script
 from tests.test_invest_autopilot import at, conn  # noqa: F401 — fixture
@@ -452,3 +452,47 @@ def test_research_desk_answers_and_adds_to_watch(client, conn, broker, at_open, 
     assert len(calls) == 1                                                              # 같은 담당은 ASK_GAP_MIN 분에 한 번
     prompt = stream.stream_prompt(st._session(st.candidates, "x"), 3, {"text": "t"}, [], "없음", st.answers)
     assert "리서치 담당의 답" in prompt and "'탄디: 부탁'" in prompt
+
+
+def test_stream_reopens_after_server_restarts_without_using_up_retries(client, conn, broker, monkeypatch):
+    """서버 재시작으로 끊긴 채널은 다시 열기 횟수에 세지 않는다 — 하루에 몇 번 재시작해도 계속 운용."""
+    _continuous(conn, broker, monkeypatch, "10:00")
+    monkeypatch.setattr(stream.Stream, "run", lambda self, notes: (_ for _ in ()).throw(RuntimeError("x")))
+    for i in range(autopilot.MAX_STREAMS + 2):
+        rec = autopilot.tick(conn, at(f"10:{i:02d}"), SampleMarket())
+        assert rec and rec["status"] == "started"
+        conn.execute("UPDATE runs SET error = ? WHERE id = ?", (INTERRUPTED, rec["run_id"]))  # 재시작이 끊은 것처럼
+        conn.commit()
+
+
+def test_resume_reopens_a_stopped_stream_and_counts_retries_again(client, conn, broker, monkeypatch):
+    _continuous(conn, broker, monkeypatch, "10:00")
+    monkeypatch.setattr(stream.Stream, "run", lambda self, notes: (_ for _ in ()).throw(RuntimeError("x")))
+    for i in range(autopilot.MAX_STREAMS):
+        autopilot.tick(conn, at(f"10:{i:02d}"), SampleMarket())
+    assert autopilot.tick(conn, at("10:05"), SampleMarket()) is None                          # 오류로 거듭 끊겨 멈춤
+    st = autopilot.status(conn, at("10:05"), SampleMarket())["stream"]
+    assert st["state"] == "stopped" and st["can_resume"] and "오류로" in st["note"]
+    assert autopilot.status(conn, at("08:00"), SampleMarket())["stream"]["can_resume"] is False  # 자동 판단 시간 밖
+
+    run_id = autopilot.resume_stream(conn, at("10:06"), SampleMarket())                       # 재개 → 다시 셈
+    assert load_run(conn, run_id)["status"] == "failed"
+    rec = autopilot.tick(conn, at("10:07"), SampleMarket())
+    assert rec and rec["status"] == "started"
+
+    conn.execute("UPDATE runs SET status = 'cancelled' WHERE id = ?", (rec["run_id"],))       # 관리자가 중지 → 스스로 안 엶
+    conn.commit()
+    assert autopilot.tick(conn, at("10:08"), SampleMarket()) is None
+    assert autopilot.status(conn, at("10:08"), SampleMarket())["stream"]["note"] == "관리자가 채널을 중지했어요"
+    assert autopilot.resume_stream(conn, at("10:09"), SampleMarket())
+
+    autopilot.save_config(conn, mode="meetings")
+    with pytest.raises(autopilot.AutopilotError):
+        autopilot.resume_stream(conn, at("10:10"), SampleMarket())
+    assert autopilot.status(conn, at("10:10"), SampleMarket())["stream"] is None
+
+
+def test_resume_route_needs_no_pin_but_checks_the_window(client, conn, broker, monkeypatch):
+    _continuous(conn, broker, monkeypatch, "08:00")
+    r = client.post("/api/invest/autopilot/resume")
+    assert r.status_code == 409 and "자동 판단 시간" in r.json()["detail"]

@@ -733,6 +733,8 @@ export interface AutopilotStatus {
   window: [string, string] | null
   window_note: string | null
   next: AutopilotEntry | null
+  /** 상시 운용 채널 — 돌고 있음 · 멈춤(관리자 중지 · 오류로 거듭 끊김 → 재개로) · 장 끝 · 기다림. 상시 운용이 아니면 null */
+  stream: { state: 'running' | 'stopped' | 'closed' | 'waiting'; note: string; run_id: number | null; can_resume: boolean } | null
   blocked: string | null
   limits: { open_after_min: number; close_before_min: number; grace_min: number; min_gap_min: number; lead_min: number; max_intents: number; max_adhoc: number; max_assistant: number }
 }
@@ -1116,6 +1118,7 @@ export const investApi = {
   deleteIntent: (id: number) => request<AutopilotStatus>('DELETE', `/api/invest/autopilot/intents/${id}`),
   autopilotPreview: () => request<ScopePreview>('GET', '/api/invest/autopilot/preview'),
   runAutopilot: () => request<Run>('POST', '/api/invest/autopilot/run'),
+  resumeAutopilot: () => request<Run>('POST', '/api/invest/autopilot/resume'),
   desk: () => request<DeskStatus>('GET', '/api/invest/desk'),
   policy: () => request<PolicyView>('GET', '/api/invest/policy'),
   holdingIndicators: () =>
