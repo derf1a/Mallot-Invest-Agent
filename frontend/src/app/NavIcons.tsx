@@ -31,6 +31,14 @@ export const PortfolioIcon = () => (
   </Svg>
 )
 
+/** 거래 기록 (영수증에 위아래 화살표) */
+export const TradesIcon = () => (
+  <Svg>
+    <path d="M6 3h12v18l-3-2-3 2-3-2-3 2z" />
+    <path d="M10 8l-1.5-1.5L7 8M8.5 6.5V12M14 11l1.5 1.5L17 11M15.5 12.5V7" />
+  </Svg>
+)
+
 export const AiIcon = () => (
   <Svg>
     <path d="M4 5h16v11H9l-5 4z" />

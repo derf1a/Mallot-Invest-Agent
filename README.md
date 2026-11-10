@@ -21,6 +21,7 @@
 | 운용 데스크 | 장 전 시장 전략가 → 섹터 애널리스트 → 종목 발굴 애널리스트, 장 중 10분마다 리스크 감시(코드) |
 | 투자 비서 · 자문 | 채팅으로 운용 지시 · 회의 일정 · 운용 목표를 정리하고 다른 에이전트에게 묻는다 (주문 도구 없음) |
 | 판단 재료 | 토스 시세 · 기술 지표, OpenDART 재무로 가치평가(PER · PBR · ROE · S-RIM), 뉴스 RSS — 숫자는 모두 코드, LLM 은 판단과 이유만 |
+| 거래 기록 | 체결된 매수 · 매도마다 거래 금액 · 지금 금액 · 손익(매도는 주문 때 적어 둔 토스 평단으로 실현 손익), 행을 펼치면 그 주문을 낳은 토론 — 안건 · 입장판 무게 · 에이전트 의견 · 트레이더 판단 |
 
 ## 구조
 
@@ -60,7 +61,7 @@ backend/            Python 3.12 · uv · FastAPI
   app/share/        휴대폰용 운용 현황 요약 데이터
   tests/            pytest (가짜 토스 계좌 · 가짜 LLM — 실제 주문 · LLM 호출 없음)
 frontend/           React 19 · Vite · TypeScript
-  src/features/invest/    AI Trading · Market · Portfolio · Team
+  src/features/invest/    AI Trading · Market · Portfolio · Trades(거래 기록) · Team
   src/features/observe/   Agents · Graph · Traces
   src/features/settings/  투자 키 · 한도, LLM (MLX · 경로 · vLLM), 공유 · 접근
   src/features/auth/      관리자 로그인
