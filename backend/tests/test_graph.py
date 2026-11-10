@@ -27,7 +27,7 @@ def test_agent_catalog_shows_prompts_tools_rules_routes_and_links(client):
 
 def test_flows_are_consistent_graphs(client):
     flows = client.get("/api/graph/flows").json()
-    assert [f["key"] for f in flows] == ["meeting", "continuous", "desk", "assistant"]
+    assert [f["key"] for f in flows] == ["meeting", "continuous", "desk", "assistant", "system"]
     for f in flows:
         g = client.get(f"/api/graph/flows/{f['key']}").json()
         ids = {n["id"] for n in g["nodes"]}

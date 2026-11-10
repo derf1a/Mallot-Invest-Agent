@@ -13,6 +13,8 @@ from app.invest.broker import trading
 from app.invest.debate import agents, scopes, stream, track
 from app.invest.ops import autopilot, desk_agents
 from app.invest.advice import advisor, assistant
+from app.system import agent as system_agent
+from app.system import github, issues
 
 DATA = {"toss_market": "토스 시세 · 섹터", "toss_account": "토스 계좌", "news_rss": "뉴스 RSS", "dart": "OpenDART 재무",
         "trading": "주문 검사"}
@@ -157,7 +159,26 @@ def assistant_flow(conn: sqlite3.Connection) -> dict:
             "refs": [catalog.ref(assistant.build_tools)]}
 
 
-FLOWS = {"meeting": meeting, "continuous": continuous, "desk": research_desk, "assistant": assistant_flow}
+def system_flow(conn: sqlite3.Connection) -> dict:
+    an = _analysts(conn)
+    nodes = [_n("reports", "시스템 요청", "store", 1.6, 1.2, "같은 말은 한 줄로 셈"),
+             _n("system", "시스템 관리자", "agent", 3.2, 1.2, issues.PROFILE["name"], agent=system_agent.KEY, obj=system_agent.triage),
+             _n("issues", "시스템 이슈", "store", 4.8, 0.4, "이슈 · 이어진 요청 · 기록"),
+             _n("answers", "답 · 버림", "store", 4.8, 2.0, "다른 에이전트 프롬프트에 (brief)"),
+             _n("github", f"GitHub {github.repo()}", "data", 6.4, 0.4, f"{github.TOKEN_ENV} 가 있을 때만"),
+             _n("assistant", "투자 비서", "agent", 0, 2.4, assistant.PROFILE.get("name", ""), agent="assistant")]
+    edges = [_e("assistant", "reports", "report_system_issue"), _e("reports", "system", "대기 요청"),
+             _e("system", "issues", "issue · link"), _e("system", "answers", "answer · ignore"),
+             _e("issues", "github", "올리기 (scrub)", "data"), _e("github", "issues", "닫힘 · 다시 열림", "data")]
+    for i, a in enumerate(an):
+        nodes.append(_n(a["key"], a["title"], "agent", 0, i * 0.5 - 0.6, "'시스템:' 문단", agent=a["key"]))
+        edges.append(_e(a["key"], "reports", "", "talk"))
+    return {"key": "system", "title": "시스템 관리자", "nodes": nodes, "edges": edges,
+            "summary": "에이전트들이 알린 시스템 문제를 시스템 관리자가 이슈로 묶거나 답하고, 토큰이 있으면 GitHub 에 올리고 닫혔는지 읽어 온다.",
+            "refs": [catalog.ref(system_agent.run)]}
+
+
+FLOWS = {"meeting": meeting, "continuous": continuous, "desk": research_desk, "assistant": assistant_flow, "system": system_flow}
 
 
 def flow(conn: sqlite3.Connection, key: str) -> dict | None:
