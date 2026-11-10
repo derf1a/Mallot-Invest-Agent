@@ -36,6 +36,7 @@ FEATURES: dict[str, str] = {
     "agent_action": "에이전틱 매매",
     "invest_assistant": "투자 비서",
     "invest_desk": "운용 데스크 리서치",
+    "system_admin": "시스템 관리자",
 }
 
 IMAGE_FEATURES: set[str] = set()  # 이미지를 읽어야 해서 로컬 LLM 을 골라도 Claude 로 가는 기능 (지금은 없음)

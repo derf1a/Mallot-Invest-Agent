@@ -14,6 +14,8 @@ from app.invest.broker import config, trading
 from app.invest.debate import agents, minutes, stream
 from app.invest.ops import autopilot, desk, desk_agents
 from app.llm import routes
+from app.system import agent as system_agent
+from app.system import issues
 
 BACKEND = Path(__file__).resolve().parents[2]
 
@@ -183,6 +185,16 @@ def helpers(conn: sqlite3.Connection) -> list[dict]:
                     "text": "자동 판단 시간 안, 10분 뒤부터, 다른 판단과 20분 간격, 하루 추가 횟수"}],
          "talks_to": [{"to": "debate", "why": "다음 회의 시각 · 안건 · 꼭 볼 종목"}],
          "hears_from": [{"from": "debate", "why": "방금 끝난 판단 요약"}], "refs": [ref(autopilot.plan_next)]},
+        {**_person(issues.PROFILE), "group": "helper", "role": "system", "enabled": True, "persona": "",
+         "feature": system_agent.FEATURE, "route": _route(system_agent.FEATURE, system_agent.KEY, opts["model"]),
+         "system_prompt": system_agent.SYSTEM, "extra_prompts": [], "tools": [],
+         "rules": [{"title": "코드가 검사", "ref": ref(system_agent.apply),
+                    "text": "대기 중인 요청 · 열린 이슈만, 한 요청은 한 번만. LLM 이 실패하면 그대로 두고 다음에 다시."},
+                   {"title": "공개 저장소", "ref": ref(system_agent.publish),
+                    "text": "GitHub 에 올리기 전에 금액 · 수량 · 계좌 형식을 지운다 (issues.scrub). 토큰이 없으면 앱 안에서만 정리."}],
+         "talks_to": [{"to": "github", "why": "이슈 올리기 · 닫혔는지 읽기"}],
+         "hears_from": [{"from": "debate", "why": "'시스템:' 문단 · 회의록 system_notes"}, {"from": "assistant", "why": "report_system_issue"}],
+         "refs": [ref(system_agent.run)]},
     ]
 
 
