@@ -62,7 +62,8 @@ def isolated_env(tmp_path, monkeypatch):
     monkeypatch.setenv("MIA_SERVICES", "0")  # 백그라운드 서비스를 띄우지 않는다
     for key in ("TOSS_CLIENT_ID", "TOSS_CLIENT_SECRET", "TOSS_ACCOUNT_SEQ", "MIA_TRADING_PIN", "ANTHROPIC_API_KEY",
                 "DART_API_KEY", "MIA_VLLM_URL", "MIA_VLLM_API_KEY", "LANGSMITH_API_KEY", "MIA_MODELS_DIR",
-                "MIA_ADMIN_PASSWORD", "MIA_ADMIN_PASSWORD_HASH", "MIA_PUBLIC", "MIA_SESSION_SECRET", "MIA_AUTOPILOT"):
+                "MIA_ADMIN_PASSWORD", "MIA_ADMIN_PASSWORD_HASH", "MIA_PUBLIC", "MIA_SESSION_SECRET", "MIA_AUTOPILOT",
+                "MIA_GITHUB_TOKEN", "MIA_GITHUB_REPO"):
         monkeypatch.delenv(key, raising=False)
     from app.auth import security
     from app.invest.broker import config, toss
@@ -77,6 +78,13 @@ def isolated_env(tmp_path, monkeypatch):
     yield
     market.clear_cache()
     toss.clear_token_cache()
+
+
+@pytest.fixture(autouse=True)
+def no_network(monkeypatch):
+    """테스트는 바깥 HTTP(뉴스 · GitHub 등 net.HTTP_REQUEST)로 나가지 않는다 — 연결 실패처럼 답한다. 필요한 테스트는 가짜로 바꿔 끼운다."""
+    from app.core import net
+    monkeypatch.setattr(net, "HTTP_REQUEST", lambda *a, **kw: (0, b"blocked in tests"))
 
 
 PIN = "2468"

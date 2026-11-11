@@ -11,6 +11,11 @@
 4) 적정가치(fair_value, S-RIM): 자기자본 + 자기자본 × (ROE − 요구수익률) × w ÷ (1 + 요구수익률 − w). ROE 는 최근 것에 무게를 둔 3개 값
    가중 평균, w 는 초과이익 지속 계수. 지배주주 지분을 따로 구분하지 않은 추정치 — 정답이 아니라 비교용 기준선이다.
 
+5) 재료(report 의 events · people): 최근 공시를 코드 표로 나눈 재료 점수 · 희석 · 자사주 · 풍문(disclosures.py)과, 이 종목에 닿는
+   유명인 발언 · 소문 기사(marketdata/figures.py). 가치 점수에는 더하지 않고 옆에 둔다 — 재무는 분기마다, 재료는 날마다 바뀌어서.
+   희석 반영 적정가치(fair_value_diluted): 최근 유상증자 · 전환사채 등 결정의 희석률 합 d 로 적정가치 ÷ (1 + d) — 조달 자금은 더하지 않는
+   보수적 하한이다.
+
 주요계정에는 현금흐름·배당이 없어 배당수익률·FCF 는 아직 보지 않는다.
 """
 
@@ -23,10 +28,10 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime
 
-from app.invest.analysis import dart
+from app.invest.analysis import dart, disclosures
 from app.invest.analysis.dart import DartError
 from app.invest.broker.toss import TossError
-from app.invest.marketdata import market
+from app.invest.marketdata import figures, market, news
 from app.invest.marketdata.market import MarketError
 
 S_STATE = "invest_dart_state"
@@ -501,14 +506,43 @@ def screen(conn: sqlite3.Connection, p, *, exclude: set[str] = frozenset(), inde
     return {"picks": picks, "rows": rows[:VALUE_LOG], "universe": len(index), "scored": len(rows)}
 
 
+def events(conn: sqlite3.Connection, p, symbol: str, name: str, market_cap: float | None) -> dict:
+    """재료 — 공시(받아서 요약) + 유명인 기사. 바깥 호출이 실패해도 가치평가는 그대로 낸다."""
+    got = disclosures.refresh(conn, symbol, market.now_kst().replace(tzinfo=None))
+    shares = None
+    try:
+        meta = p.info(symbol)
+        shares, name = meta.get("shares_outstanding"), name or meta.get("name") or ""
+    except (MarketError, TossError):
+        pass
+    ev = disclosures.summary(conn, symbol, shares=shares, today=market.now_kst().date())
+    if not got["ok"] and not ev["count"]:
+        ev["note"] = got["reason"]
+    try:
+        people = figures.for_symbol(conn, symbol, name)
+    except news.NewsError:
+        people = []
+    return {"disclosures": ev, "people": people,
+            "people_note": "유명인 발언 · 소문은 원글이 아니라 보도된 기사 제목이다. '소문' 표시는 확인되지 않은 것 — 사실로 다루지 말 것"}
+
+
 def report(conn: sqlite3.Connection, p, symbol: str) -> dict:
-    """한 종목의 가치평가 — 에이전트 도구·화면. 없으면 이유를 돌려준다."""
+    """한 종목의 가치평가 + 재료 — 에이전트 도구·화면. 재무가 없으면 이유와 재료만 돌려준다."""
     index = sector_index(p)
+    info = index.get(symbol) or {}
     v = evaluate(conn, p, [symbol], index=index).get(symbol)
     if v is None:
         reason = dart.NOT_CONFIGURED if not dart.configured() and not load_reports(conn, [symbol]) else "재무 자료가 없어요 (ETF·미공시·우선주 등)"
-        return {"symbol": symbol, "available": False, "reason": reason}
+        return {"symbol": symbol, "available": False, "reason": reason, "events": events(conn, p, symbol, info.get("name") or "", None)}
     ind = v["indicators"]
-    return {"symbol": symbol, "available": True, "sector": (index.get(symbol) or {}).get("sector"), "score": v["score"], "grade": v["grade"],
+    ev = events(conn, p, symbol, info.get("name") or "", ind.get("market_cap"))
+    dil = (ev["disclosures"].get("dilution") or {}).get("pct")
+    diluted = None
+    if ind.get("fair_value") and dil:
+        fv = ind["fair_value"] / (1 + dil)
+        diluted = {"fair_value": fv, "upside": fv / ind["market_cap"] - 1 if ind.get("market_cap") else None, "dilution": dil,
+                   "note": "최근 희석 결정을 모두 반영한 보수적 하한 (조달 자금은 더하지 않음)"}
+    return {"symbol": symbol, "available": True, "sector": info.get("sector"), "score": v["score"], "grade": v["grade"],
             "coverage": v["coverage"], "reason": v["reason"], "pillars": v["pillars"], "items": v["items"], "missing": v["missing"], "peer": v["peer"],
-            "indicators": ind, "basis": v["basis"], "fair_value_note": f"S-RIM 추정 (요구수익률 {REQUIRED_RETURN:.0%}, 지속 계수 {PERSISTENCE}) — 정답이 아니라 비교 기준"}
+            "indicators": ind, "basis": v["basis"], "fair_value_note": f"S-RIM 추정 (요구수익률 {REQUIRED_RETURN:.0%}, 지속 계수 {PERSISTENCE}) — 정답이 아니라 비교 기준",
+            "fair_value_diluted": diluted, "events": ev}

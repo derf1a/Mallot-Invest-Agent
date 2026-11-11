@@ -315,4 +315,25 @@ MIGRATIONS: list[str] = [
     );
     CREATE INDEX idx_invest_broker_fills_at ON invest_broker_fills (filled_at);
     """,
+    # v5 (공시 · 재료): OpenDART 공시 목록과 코드 분류, 희석 · 자사주 상세 — 가치평가의 재료 (app/invest/analysis/disclosures.py)
+    """
+    CREATE TABLE invest_disclosures (
+        rcept_no   TEXT    PRIMARY KEY,              -- DART 접수번호 (원문 주소 dart.fss.or.kr/dsaf001/main.do?rcpNo=)
+        symbol     TEXT    NOT NULL,
+        corp_name  TEXT    NOT NULL DEFAULT '',
+        report_nm  TEXT    NOT NULL,
+        rcept_dt   TEXT    NOT NULL,                 -- YYYY-MM-DD
+        flr_nm     TEXT    NOT NULL DEFAULT '',      -- 공시 제출인
+        rm         TEXT    NOT NULL DEFAULT '',      -- 비고 (유: 유가증권 · 코: 코스닥 · 정: 정정 …)
+        kind       TEXT,                             -- 코드 분류 키 (disclosures.RULES), 모르면 NULL
+        impact     INTEGER NOT NULL DEFAULT 0,       -- -3 ~ +2
+        detail     TEXT    NOT NULL DEFAULT '{}',    -- 희석률 · 자사주 비율 등 상세 (JSON)
+        fetched_at TEXT    NOT NULL DEFAULT (datetime('now', 'localtime'))
+    );
+    CREATE INDEX idx_invest_disclosures_symbol ON invest_disclosures (symbol, rcept_dt);
+    CREATE TABLE invest_disclosure_fetch (
+        symbol     TEXT PRIMARY KEY,
+        fetched_at TEXT NOT NULL                     -- 마지막으로 공시 목록을 받은 시각 (캐시)
+    );
+    """,
 ]

@@ -16,8 +16,8 @@ core  ←  llm  ←  runs  ←  invest (broker · marketdata · analysis  ←  d
 | `app/llm` | `structured()`(도구 없음) · `agentic()`(앱 도구만) 단일 진입점, 경로(`routes.py`), 백엔드: Claude Agent SDK · 로컬 MLX(`local.py` · `mlx_worker.py`) · vLLM(`vllm.py`), 채팅 루프(`loop.py`), 사용량 `llm_usage` |
 | `app/runs` | 작업 실행기 — 상태 · 진행률 · 로그 · 지표 · 산출물(`data/runs/<id>`). 실행을 새로 만드는 범용 API 는 없다 (토론은 PIN 을 거치는 투자 API 로만) |
 | `app/invest/broker` | 토스증권 Open API(`toss.py`), 주문 한도 · PIN(`config.py`), **모든 주문이 지나는** `trading.place_order`, 내 투자현황(`portfolio.py`) |
-| `app/invest/marketdata` | 시세 제공자(토스 / 샘플), 기술 지표, 뉴스 RSS, 관심 그룹 |
-| `app/invest/analysis` | 코드가 계산하는 판단 재료 — OpenDART 재무 · 가치평가, 시장 스캔 점수, 판단 기록, 보유 종목 매도 점검, 운용 목표 |
+| `app/invest/marketdata` | 시세 제공자(토스 / 샘플), 기술 지표, 뉴스 RSS(종목은 주가 + 실적 · 수주 · 계약 · 공시 검색어), 유명인 발언 · 소문(`figures.py`), 관심 그룹 |
+| `app/invest/analysis` | 코드가 계산하는 판단 재료 — OpenDART 재무 · 가치평가, 공시 재료(`disclosures.py`: 분류 · 희석 · 자사주 · 풍문), 시장 스캔 점수, 판단 기록, 보유 종목 매도 점검, 운용 목표 |
 | `app/invest/debate` | 토론 엔진(`agents.py`: 명단 · 도구 · 라운드 · 게이트 · 트레이더), 상시 운용 채널(`stream.py`), 의견 가중치(`track.py`), 회의록, 토론 범위 |
 | `app/invest/ops` | 자동 운용 일정(`autopilot.py`), 운용 데스크(`desk.py` · `desk_agents.py`, 데스크 설정 `invest_desk_config`), 아침 브리핑 · 장 마감 보고(`morning.py`) · 보고서, 뉴스 리포트 |
 | `app/invest/advice` | 투자 비서(`assistant.py`), 자문 에이전트(`advisor.py`) |

@@ -41,7 +41,7 @@ from app.invest.analysis import policy
 from app.invest.broker import config
 from app.invest.broker.toss import TossError
 from app.invest.debate import agents, scopes
-from app.invest.marketdata import market
+from app.invest.marketdata import figures, market
 from app.invest.marketdata.market import MarketError
 from app.invest.ops import autopilot, briefing, desk
 from app.llm.client import LLMError, ToolDef, agentic
@@ -95,6 +95,8 @@ SYSTEM = f"""당신은 Mallot 의 투자 비서 {PROFILE['name']}({PROFILE['full
    '회의는 필요할 때만 / 정해진 시각마다 꼭'은 update_schedule 의 flexible(true = 새 안건이 있을 때만).
    운용 방식은 update_schedule 의 mode — continuous(상시 운용: 정기 회의 없이 장 내내 에이전트들이 대화하고 트레이더가 언제든 주문, 기본) /
    meetings(정해 둔 시각에 회의). 상시 운용 중에는 start_now·schedule_meeting 이 채널에 관리자 말·안건으로 바로 들어갑니다.
+   유명인 발언 · 소문: 운용 데스크와 분석 에이전트는 지켜볼 인물 목록(get_figures)의 발언 · 소문 기사를 봅니다. '○○도 지켜봐 줘'면
+   update_figure 로 더하세요 — 누구인지 모르면 role 을 비우고 관리자에게 짧게 물어보세요. 관련 종목 코드는 get_quote 등으로 확인한 것만.
 6) 리서치: 운용 데스크는 시장 전략가 {desk.PEOPLE['strategist']['name']}·섹터 애널리스트 {desk.PEOPLE['sector']['name']}·종목 발굴 애널리스트
    {desk.PEOPLE['scout']['name']}입니다(장 전에 시장 분석 → 섹터 탐색 → 종목 발굴, 회의는 그 발굴 목록과 보유로 안건을 정함). 시장·섹터·
    발굴 종목을 물으면 get_research 로 오늘 결과를 전하고, 다시 분석하라거나 특정 섹터를 찾아보라면 run_research(note 에 그 요청)로 시작하세요.
@@ -510,6 +512,32 @@ def build_tools(conn: sqlite3.Connection, s: agents.Session, used: list[str], mo
                 ("" if after["enabled"] else "꺼짐 · ") + after["summary"])
         return {"ok": True, "before": before, "after": after}
 
+    async def get_figures(_: dict) -> dict:
+        note("get_figures")
+        rows = figures.collect(conn, days=2)
+        return {"figures": [{"name": f["name"], "aliases": f["aliases"], "role": f["role"], "topics": f["topics"], "symbols": f["symbols"],
+                             "recent": [{k: i[k] for k in ("title", "kind_ko", "published_at", "related")} for i in f["items"][:4]]} for f in rows],
+                "note": "보도된 기사 제목 기준 — '소문' · '스캔들'은 확인되지 않은 것"}
+
+    async def update_figure(a: dict) -> dict:
+        name = str(a.get("name") or "").strip()
+        try:
+            if a.get("remove"):
+                figures.remove(conn, name)
+                note("update_figure")
+                changed("지켜볼 인물", name, "뺌")
+                return {"ok": True, "removed": name}
+            before = next((f for f in figures.get_figures(conn) if f["name"] == name), None)
+            items = figures.upsert(conn, {**(before or {}), **{k: a[k] for k in ("name", "aliases", "role", "topics", "symbols") if a.get(k) is not None}})
+        except figures.FigureError as e:
+            note("update_figure", False)
+            return {"ok": False, "error": str(e)}
+        note("update_figure")
+        got = next(f for f in items if f["name"] == name)
+        changed("지켜볼 인물", "없음" if before is None else name, f"{name}({got['role'] or '역할 없음'}"
+                + (f" · 종목 {', '.join(got['symbols'])}" if got["symbols"] else "") + ")")
+        return {"ok": True, "figure": got, "count": len(items)}
+
     async def update_desk(a: dict) -> dict:
         before = desk.get_config(conn)
         try:
@@ -669,6 +697,12 @@ def build_tools(conn: sqlite3.Connection, s: agents.Session, used: list[str], mo
               {"research": {"type": "boolean"}, "prep_min": {"type": "integer"}, "watch": {"type": "boolean"},
                "watch_min": {"type": "integer"}, "drop_pct": {"type": "number"}, "jump_pct": {"type": "number"},
                "breakout_pct": {"type": "number"}, "adhoc": {"type": "boolean"}, "refresh": {"type": "boolean"}}, [], update_desk),
+        _tool("get_figures", "지켜보는 유명인 목록(이름 · 역할 · 관련 주제 · 관련 종목)과 최근 2일 발언 · 소문 기사 제목.", {}, [], get_figures),
+        _tool("update_figure", "지켜볼 유명인을 더하거나 고친다(같은 이름이면 고침) — name, aliases(다른 표기), role(누구인지), topics(관련 테마), "
+              "symbols(관련 종목 6자리 코드). remove=true 면 목록에서 뺀다. 종목 코드는 확인한 것만.",
+              {"name": {"type": "string"}, "aliases": {"type": "array", "items": {"type": "string"}}, "role": {"type": "string"},
+               "topics": {"type": "array", "items": {"type": "string"}}, "symbols": {"type": "array", "items": {"type": "string"}},
+               "remove": {"type": "boolean"}}, ["name"], update_figure),
         _tool("halt_trading", "모든 주문을 즉시 멈춘다(비상 정지). 멈추기만 할 수 있고 다시 열기는 관리자가 설정 > 투자에서. reason = 왜.",
               {"reason": {"type": "string"}}, ["reason"], halt_trading),
         _tool("set_agent", "분석 에이전트를 회의에서 빼거나(enabled=false) 다시 넣는다. 실행 담당(트레이더)은 뺄 수 없다.",

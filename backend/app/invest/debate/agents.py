@@ -34,11 +34,11 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Any
 
-from app.invest.analysis import exits, valuation
+from app.invest.analysis import disclosures, exits, valuation
 from app.invest.broker import config, portfolio, trading
 from app.invest.broker.toss import TossError
 from app.invest.broker.trading import TradeError
-from app.invest.marketdata import indicators, market, news
+from app.invest.marketdata import figures, indicators, market, news
 from app.invest.marketdata.market import MarketError
 from app.core import trace
 from app.llm.client import LLMError, ToolDef, agentic
@@ -153,8 +153,17 @@ TOOL_INFO: dict[str, dict] = {
                            "schema": {"type": "object", "properties": {}}},
     "get_sector_overview": {"title": "섹터 개요", "desc": "섹터 토론일 때 섹터 요약·기간별 등락률·시가총액 상위 구성 종목·관련 ETF.",
                             "schema": {"type": "object", "properties": {}}},
-    "search_news": {"title": "뉴스 검색", "desc": "종목(또는 query)의 최근 뉴스 제목·출처·시각 (Google 뉴스 RSS, 본문 없음).",
+    "search_news": {"title": "뉴스 검색", "desc": "종목(또는 query)의 최근 뉴스 제목·출처·시각 (Google 뉴스 RSS, 본문 없음). 종목이면 주가 기사와 "
+                                               "실적·수주·계약·공시 기사를 함께 찾는다.",
                     "schema": _schema(query={"type": "string"})},
+    "get_disclosures": {"title": "공시 재료", "desc": "최근 90일 DART 공시를 코드가 나눈 것 — 종류(유상증자·전환사채·자사주·공급계약·감자·소송·풍문 조회공시 "
+                                                  "등)와 영향(-3 큰 악재 ~ +2 큰 호재), 재료 점수(±5), 희석률(새 주식 ÷ 기존 주식), 자사주 규모, 원문 링크. "
+                                                  "소문은 조회공시 · 해명 공시가 있는지로 확인한다.",
+                        "schema": _schema()},
+    "get_figure_news": {"title": "유명인 발언", "desc": "시장을 움직이는 인물(관리자가 정한 목록 — 예: 젠슨 황 · 일론 머스크 · 트럼프)의 최근 3일 발언 · 소문 "
+                                                   "기사 — 종류(발언 · 확인 안 된 소문 · 개인 스캔들)와 관련 종목. 원글이 아니라 보도된 제목이다. "
+                                                   "'소문' · '스캔들'은 사실로 다루지 말고, 핵심 인물 위험 · 단기 심리로만 따져라. symbol 을 주면 그 종목에 닿는 것만.",
+                        "schema": _schema()},
     "get_latest_report": {"title": "최근 AI 리포트", "desc": "가장 최근 LLM 뉴스 리포트에서 후보 종목·시장 부분.",
                           "schema": {"type": "object", "properties": {}}},
     "get_market_overview": {"title": "시장 지표", "desc": "코스피·코스닥·국채 금리, 장 운영 여부, 상승·하락 상위 종목.",
@@ -252,6 +261,27 @@ def _handlers(s: Session) -> dict[str, Callable[[dict], Awaitable[object]]]:
                 "leverage", "currency")
         return {**{k: snap.get(k) for k in keys}, "data_source": _source(p)}
 
+    async def get_disclosures(a: dict) -> dict:
+        sym = pick(a)
+        got = disclosures.refresh(s.conn, sym, market.now_kst().replace(tzinfo=None))
+        try:
+            shares = p.info(sym).get("shares_outstanding")
+        except (MarketError, TossError):
+            shares = None
+        out = disclosures.summary(s.conn, sym, shares=shares, today=market.now_kst().date())
+        return {"symbol": sym, **out, **({"note": got["reason"]} if not got["ok"] else {}), "data_source": "OpenDART 공시 목록 · 주요사항보고서"}
+
+    async def get_figure_news(a: dict) -> dict:
+        if a.get("symbol"):
+            sym = pick(a)
+            people = figures.for_symbol(s.conn, sym, s.name_of(sym))
+            return {"symbol": sym, "people": people, "note": "원글이 아니라 보도 제목 — 소문은 사실이 아님",
+                    "data_source": "Google 뉴스 RSS"}
+        names = {c["symbol"]: c["name"] for c in s.candidates}
+        rows = figures.collect(s.conn, names=names)
+        return {"people": [{"name": f["name"], "role": f["role"], "items": f["items"][:5]} for f in rows if f["items"]],
+                "watching": [f["name"] for f in rows], "note": "원글이 아니라 보도 제목 — 소문은 사실이 아님", "data_source": "Google 뉴스 RSS"}
+
     async def get_valuation(a: dict) -> dict:
         return {**valuation.report(s.conn, p, pick(a)), "data_source": "OpenDART 공시 재무 + 토스 시가총액"}
 
@@ -284,12 +314,13 @@ def _handlers(s: Session) -> dict[str, Callable[[dict], Awaitable[object]]]:
 
     async def search_news(a: dict) -> dict:
         q = str(a.get("query") or "").strip()[:60]
-        sym = None
-        if not q:
-            sym = pick(a)
-            q = news.symbol_query(s.name_of(sym))
         try:
-            items = news.fetch(s.conn, q, sym, 10)
+            if q:
+                items = news.fetch(s.conn, q, None, 10)
+            else:  # 종목: 주가 기사 + 실적 · 수주 · 계약 · 공시 기사
+                sym = pick(a)
+                q = " · ".join(news.symbol_queries(s.name_of(sym)))
+                items = news.fetch_symbol(s.conn, sym, s.name_of(sym), 12)
         except news.NewsError as e:
             return {"error": str(e), "items": []}
         return {"query": q, "items": [{"id": n["id"], "title": n["title"], "source": n["source"],
@@ -381,6 +412,7 @@ def _handlers(s: Session) -> dict[str, Callable[[dict], Awaitable[object]]]:
             "get_intraday": get_intraday, "get_orderbook": get_orderbook, "get_investor_flow": get_investor_flow,
             "get_company_info": get_company_info, "get_valuation": get_valuation, "compare_candidates": compare_candidates,
             "get_sector_overview": get_sector_overview, "search_news": search_news, "get_latest_report": get_latest_report,
+            "get_disclosures": get_disclosures, "get_figure_news": get_figure_news,
             "get_market_overview": get_market_overview, "get_portfolio": get_portfolio,
             "get_trading_limits": get_trading_limits, EXECUTOR_TOOL: place_order}
 
@@ -440,17 +472,18 @@ DEFAULT_ROSTER: list[dict] = [
      "persona": "보수적인 장기 가치 투자자. 공시 재무로 계산한 가치평가(PER·PBR·ROE·업종 대비·적정가치)를 먼저 보고, 시가총액·사업 안정성·수급의 "
                 "지속성을 함께 본다. 단기 급등이나 유행에는 회의적이고, 싸다는 근거가 없으면 사지 않는다. 재무 자료가 없으면 없다고 말하고 추측하지 "
                 "않는다. ETF 는 구성과 분산 효과를 본다.",
-     "tools": ["compare_candidates", "get_valuation", "get_quote", "get_company_info", "get_price_history", "get_investor_flow",
-               "get_sector_overview"]},
+     "tools": ["compare_candidates", "get_valuation", "get_disclosures", "get_quote", "get_company_info", "get_price_history",
+               "get_investor_flow", "get_sector_overview"]},
     {"key": "news", "title": "뉴스 애널리스트", "enabled": True, "executor": False,
      "persona": "이벤트·센티먼트 중심 애널리스트. 최근 뉴스 흐름과 시장 분위기에 민감하게 반응하지만, 제목만으로 과장하지 않는다.",
-     "tools": ["search_news", "get_latest_report", "get_market_overview", "get_sector_overview", "get_quote"]},
+     "tools": ["search_news", "get_figure_news", "get_disclosures", "get_latest_report", "get_market_overview", "get_sector_overview",
+               "get_quote"]},
     {"key": "growth", "title": "모멘텀 투자자", "enabled": True, "executor": False,
      "persona": "적극적인 성장·모멘텀 투자자. 강한 추세, 거래량 급증, 업종 주도주, 호재 뉴스처럼 상승 동력이 보이면 기회를 놓치지 말자고 "
                 "먼저 매수 의견을 낸다. 다만 근거는 도구로 확인한 사실만 쓰고, 매수를 말할 때는 손절 기준(어디서 틀렸다고 볼지)을 함께 "
                 "말한다. 동력이 꺾이면 빠르게 매도·비중 축소를 주장한다. 지나친 신중함에는 반박하되 리스크 매니저의 경고는 숫자로 따져 본다.",
-     "tools": ["get_quote", "get_technicals", "get_intraday", "get_investor_flow", "search_news", "compare_candidates",
-               "get_sector_overview"]},
+     "tools": ["get_quote", "get_technicals", "get_intraday", "get_investor_flow", "search_news", "get_figure_news",
+               "compare_candidates", "get_sector_overview"]},
     {"key": "portfolio", "title": "포트폴리오 매니저", "enabled": True, "executor": False,
      "persona": "내 투자현황 관점의 자산 배분 담당. 토스 보유(국내·해외)·예수금·다른 계좌 보유까지 합친 전체 자산에서 현금 비중, "
                 "종목 집중도, 후보와 이미 가진 종목의 중복, 손익 상태를 보고 판단한다. 이미 비중이 큰 종목·같은 업종에 더 싣는 매수에는 "
@@ -460,7 +493,7 @@ DEFAULT_ROSTER: list[dict] = [
     {"key": "risk", "title": "리스크 매니저", "enabled": True, "executor": False,
      "persona": "손실 회피형 리스크 매니저이자 반대 검증 담당. 변동성·집중도·한도·시장 상황을 보고 다수 의견의 약점을 반드시 "
                 "찾아 말한다. 위험이 보상보다 크면 반대하고, 불확실하면 의견 없음을 택한다.",
-     "tools": ["get_portfolio", "get_trading_limits", "get_technicals", "get_market_overview"]},
+     "tools": ["get_portfolio", "get_trading_limits", "get_technicals", "get_market_overview", "get_disclosures"]},
     {"key": "trader", "title": "트레이더", "enabled": True, "executor": True,
      "persona": "실행 담당. 토론 결과와 계좌·한도·호가를 확인해 주문 여부와 수량을 정한다. 확신이 약하거나 호가가 불리하면 "
                 "행동하지 않는다. 한 번에 한도의 일부만 쓴다.",
@@ -505,11 +538,37 @@ def default_person(key: str, taken: set[str] | None = None) -> tuple[str, str, s
     return NAME_POOL[start % len(NAME_POOL)]
 
 
+# 나중에 더한 도구 — 예전에 저장한 명단의 기본 에이전트에게 한 번만 준다(그 뒤 관리자가 빼면 그대로 둔다). 버전을 올리며 더한다.
+ADDED_TOOLS: dict[int, dict[str, list[str]]] = {
+    1: {"value": ["get_disclosures"], "news": ["get_figure_news", "get_disclosures"], "growth": ["get_figure_news"], "risk": ["get_disclosures"]},
+}
+TOOLS_VERSION_KEY = "invest_agent_tools_version"
+
+
+def _grant_added_tools(conn: sqlite3.Connection, roster: list[dict]) -> list[dict]:
+    row = conn.execute("SELECT value FROM settings WHERE key = ?", (TOOLS_VERSION_KEY,)).fetchone()
+    have = int(row[0]) if row and str(row[0]).isdigit() else 0
+    latest = max(ADDED_TOOLS)
+    if have >= latest:
+        return roster
+    for v in sorted(k for k in ADDED_TOOLS if k > have):
+        for a in roster:
+            for t in ADDED_TOOLS[v].get(a["key"], []):
+                if t not in a["tools"]:
+                    a["tools"].append(t)
+    conn.execute("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                 (ROSTER_KEY, json.dumps(roster, ensure_ascii=False)))
+    conn.execute("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                 (TOOLS_VERSION_KEY, str(latest)))
+    conn.commit()
+    return roster
+
+
 def get_roster(conn: sqlite3.Connection) -> list[dict]:
     row = conn.execute("SELECT value FROM settings WHERE key = ?", (ROSTER_KEY,)).fetchone()
     if row:
         try:
-            return validate_roster(json.loads(row[0]))  # 예전에 저장한 명단에는 이름이 없다 — 채워서
+            return _grant_added_tools(conn, validate_roster(json.loads(row[0])))  # 예전에 저장한 명단에는 이름이 없다 — 채워서
         except (ValueError, AgentError):
             pass
     return validate_roster([dict(a, tools=list(a["tools"])) for a in DEFAULT_ROSTER])

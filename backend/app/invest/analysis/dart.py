@@ -122,3 +122,37 @@ def multi_accounts(corps: list[str], year: int, reprt_code: str) -> list[dict]:
     _status(code, str(data.get("message") or ""))
     rows = data.get("list") if code == "000" else []
     return [r for r in rows or [] if isinstance(r, dict)]
+
+
+def _json(body: bytes) -> dict:
+    try:
+        data = json.loads(body)
+    except (ValueError, UnicodeDecodeError) as e:
+        raise DartError(f"OpenDART 응답을 해석할 수 없습니다: {e}") from None
+    if not isinstance(data, dict):
+        raise DartError("OpenDART 응답 형식이 예상과 다릅니다")
+    _status(str(data.get("status") or ""), str(data.get("message") or ""))
+    return data
+
+
+def disclosure_list(corp_code: str, bgn_de: str, end_de: str, max_pages: int = 3) -> list[dict]:
+    """공시 검색 /list.json — 한 회사의 기간(YYYYMMDD) 공시 → [{rcept_no, report_nm, rcept_dt, flr_nm, rm, corp_name, stock_code …}].
+    최근 것부터, 100건씩 max_pages 쪽까지."""
+    out: list[dict] = []
+    for page in range(1, max_pages + 1):
+        data = _json(_get("list.json", {"corp_code": corp_code, "bgn_de": bgn_de, "end_de": end_de, "page_no": page, "page_count": 100}))
+        rows = [r for r in data.get("list") or [] if isinstance(r, dict)]
+        out += rows
+        if page >= int(data.get("total_page") or 1) or not rows:
+            break
+    return out
+
+
+# 주요사항보고서 상세 — 희석 · 자사주 비율을 계산할 때 (필드 이름은 2026-11 실제 응답으로 확인, 신주인수권부사채는 같은 규칙으로 추정)
+DETAIL = {"rights": "piicDecsn.json", "cb": "cvbdIsDecsn.json", "bw": "bdwtIsDecsn.json", "buyback": "tsstkAqDecsn.json"}
+
+
+def decision_detail(kind: str, corp_code: str, bgn_de: str, end_de: str) -> list[dict]:
+    """주요사항보고서 상세(DETAIL) → 응답 list 그대로. 없으면(013) 빈 목록."""
+    data = _json(_get(DETAIL[kind], {"corp_code": corp_code, "bgn_de": bgn_de, "end_de": end_de}))
+    return [r for r in data.get("list") or [] if isinstance(r, dict)]

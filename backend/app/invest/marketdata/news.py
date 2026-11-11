@@ -1,6 +1,7 @@
 """투자 뉴스 수집 — Google 뉴스 RSS 검색(공개 피드)으로 종목별·시장 뉴스를 모아 invest_news 에 쌓는다.
 
-- 종목: "<종목명> 주가" / 시장: "코스피 증시", "미국 증시"
+- 종목: "<종목명> 주가" + "<종목명> 실적 OR 수주 OR 계약 OR 공시"(EVENT_TERMS — '주가'가 없는 실적 · 계약 기사도 걸리게) /
+  시장: "코스피 증시", "미국 증시". 유명인 발언은 figures.py 가 같은 fetch 로 받는다.
 - 같은 질의는 15분 안에 다시 받지 않는다 (캐시). 기사 본문은 가져오지 않고 제목·출처·시각·요약 문구만 쓴다.
 - 요청은 실험실 리서치와 같은 http_request — 공인 주소만, 리다이렉트도 공인 주소로만, 본문 크기 제한.
 """
@@ -30,8 +31,41 @@ class NewsError(Exception):
     pass
 
 
+EVENT_TERMS = ("실적", "수주", "계약", "공시")
+
+
 def symbol_query(name: str) -> str:
     return f"{name} 주가"
+
+
+def symbol_queries(name: str) -> list[str]:
+    """종목 하나의 검색어들 — 주가 기사 + 실적 · 수주 · 계약 · 공시 기사 (Google 뉴스 검색은 OR 를 받는다)."""
+    return [symbol_query(name), f"{name} " + " OR ".join(EVENT_TERMS)]
+
+
+def _merge(groups: list[list[dict]], limit: int) -> list[dict]:
+    seen, out = set(), []
+    for n in sorted((n for g in groups for n in g), key=lambda n: n.get("published_at") or "", reverse=True):
+        if n["id"] not in seen:
+            seen.add(n["id"])
+            out.append(n)
+    return out[:limit]
+
+
+def fetch_symbol(conn: sqlite3.Connection, symbol: str, name: str, limit: int = 15, force: bool = False,
+                 on_error: Callable[[str], None] | None = None) -> list[dict]:
+    """종목 검색어들(symbol_queries)을 모두 받아 최신순으로 합친다. 하나가 실패해도 나머지는 쓴다 — 모두 실패하면 NewsError."""
+    groups, errors = [], []
+    for q in symbol_queries(name or symbol):
+        try:
+            groups.append(fetch(conn, q, symbol, limit, force))
+        except NewsError as e:
+            errors.append(str(e))
+            if on_error:
+                on_error(str(e))
+    if not groups and errors:
+        raise NewsError(errors[0])
+    return _merge(groups, limit)
 
 
 def parse_rss(body: bytes) -> list[dict]:
@@ -122,11 +156,9 @@ def collect(conn: sqlite3.Connection, targets: list[dict], include_market: bool,
     out: dict[str | None, list[dict]] = {}
     for t in targets:
         try:
-            out[t["symbol"]] = fetch(conn, symbol_query(t["name"] or t["symbol"]), t["symbol"], per_query, force)
-        except NewsError as e:
-            out[t["symbol"]] = []
-            if on_error:
-                on_error(str(e))
+            out[t["symbol"]] = fetch_symbol(conn, t["symbol"], t["name"] or t["symbol"], per_query, force)
+        except NewsError:
+            out[t["symbol"]] = []  # 검색어마다 on_error 로 이미 알렸다
     if include_market:
         merged: list[dict] = []
         for q in MARKET_QUERIES:
@@ -135,10 +167,5 @@ def collect(conn: sqlite3.Connection, targets: list[dict], include_market: bool,
             except NewsError as e:
                 if on_error:
                     on_error(str(e))
-        seen, uniq = set(), []
-        for n in sorted(merged, key=lambda n: n.get("published_at") or "", reverse=True):
-            if n["id"] not in seen:
-                seen.add(n["id"])
-                uniq.append(n)
-        out[None] = uniq
+        out[None] = _merge([merged], len(merged))
     return out
