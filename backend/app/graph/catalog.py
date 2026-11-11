@@ -34,7 +34,8 @@ TOOL_SOURCES = {
     "get_quote": "toss_market", "get_price_history": "toss_market", "get_technicals": "toss_market",
     "get_orderbook": "toss_market", "get_intraday": "toss_market", "get_investor_flow": "toss_market",
     "get_market_overview": "toss_market", "get_company_info": "toss_market", "get_sector": "toss_market",
-    "search_news": "news_rss", "get_news_report": "news_rss", "get_valuation": "dart",
+    "search_news": "news_rss", "get_news_report": "news_rss", "get_valuation": "dart", "get_disclosures": "dart",
+    "get_figure_news": "news_rss",
     "get_portfolio": "toss_account", "get_account": "toss_account", "get_buying_power": "toss_account",
     "get_sellable_quantity": "toss_account", "get_order_limits": "toss_account", "place_order": "trading",
 }

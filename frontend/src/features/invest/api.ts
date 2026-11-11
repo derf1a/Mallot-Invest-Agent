@@ -445,7 +445,11 @@ export interface Ideas {
   by: 'llm' | 'code'
   rows: ScreeningRow[]
 }
-export interface DeskAlert { symbol: string; name: string; kind: 'drop' | 'jump' | 'breakout'; change: number; held: boolean; text?: string; at?: string }
+export interface DeskAlert {
+  symbol: string; name: string; kind: 'drop' | 'jump' | 'breakout' | 'disclosure'; change: number | null; held: boolean; text?: string; at?: string
+  /** kind = disclosure — 보유 종목의 오늘 큰 악재 공시 · 풍문 조회공시 */
+  disclosure?: { label: string; title: string; impact: number; url: string }
+}
 export type DeskStepKey = 'market' | 'sector' | 'ideas' | 'committee' | 'execution' | 'risk'
 export interface DeskStatus {
   enabled: boolean

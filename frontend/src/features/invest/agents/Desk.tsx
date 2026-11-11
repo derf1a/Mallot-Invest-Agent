@@ -15,7 +15,7 @@ import { nameOf, type Person } from './people'
 const REGIME: Record<MarketView['regime'], string> = { risk_on: '위험 선호', neutral: '중립', risk_off: '위험 회피' }
 const CASH: Record<MarketView['cash'], string> = { raise: '현금 늘리기', keep: '현금 유지', lower: '현금 줄이기' }
 const RATE: Record<string, string> = { '1d': '1일', '1w': '1주', '1mo': '1개월', '3mo': '3개월' }
-const ALERT: Record<DeskAlert['kind'], string> = { drop: '급락', jump: '급등 · 차익 검토', breakout: '발굴 종목 급등' }
+const ALERT: Record<DeskAlert['kind'], string> = { drop: '급락', jump: '급등 · 차익 검토', breakout: '발굴 종목 급등', disclosure: '공시' }
 
 const spct = (v: number | null | undefined) => (v === null || v === undefined ? '-' : `${v >= 0 ? '+' : ''}${(v * 100).toFixed(1)}%`)
 const stone = (v: number | null | undefined) => (!v ? '' : v > 0 ? 'up' : 'down')
@@ -172,7 +172,9 @@ function AlertChips({ alerts }: { alerts: DeskAlert[] }) {
     <div className="desk-themes small">
       {alerts.map((a) => (
         <span key={`${a.symbol}${a.kind}`} className={`chip alert-chip ${a.kind}`}>
-          {a.name} <b className={stone(a.change)}>{spct(a.change)}</b> · {ALERT[a.kind]}
+          {a.disclosure
+            ? <>{a.name} · {ALERT[a.kind]} <a href={a.disclosure.url} target="_blank" rel="noreferrer">{a.disclosure.label} ↗</a></>
+            : <>{a.name} <b className={stone(a.change)}>{spct(a.change)}</b> · {ALERT[a.kind]}</>}
         </span>
       ))}
     </div>

@@ -10,7 +10,8 @@
    시가총액 상위·거래대금 상위(중소형) + 가치 상위 + 시장 랭킹 + 운용 지시 종목 + 관심 → screening 점수(시장 국면이 가중치를 바꿈) → LLM 이 IDEAS 개를
    이유와 함께 고른다(SCOUT_SYSTEM). 보유 종목은 표에서 빼고(회의 때 포트폴리오 매니저가 본다), 한 섹터 screening.MAX_PER_SECTOR 개를 코드가
    강제하고, 코드로 고를 때는 급등 직후·과열을 건너뛴다. 고른 것·뺀 것·지나친 것 전부 판단 기록(kind ideas)에.
-4) 리스크 감시(리스크 매니저, watch — LLM 없음): 보유(국내)·발굴 종목의 오늘 등락(일봉 마지막 두 개) → 보유 −drop_pct 이하 급락·
+4) 리스크 감시(리스크 매니저, watch — LLM 없음): 보유 종목의 오늘 공시 중 큰 악재 · 풍문 조회공시(disclosure_alerts), 그리고
+   보유(국내)·발굴 종목의 오늘 등락(일봉 마지막 두 개) → 보유 −drop_pct 이하 급락·
    +jump_pct 이상 급등(차익 검토), 발굴 종목 +breakout_pct 이상 급등(데스크 설정). 같은 종목·종류는 하루 한 번. 경보는 invest_desk·채팅방(리스크
    매니저 말풍선)에 남기고, 자동 운용이고 설정 adhoc 이 켜져 있으면 그 종목으로 수시 회의(autopilot.run_adhoc) — 토론 중이면 다음 감시 때
    다시(ADHOC_WAIT_MIN 분 안).
@@ -28,12 +29,12 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 
 from app.invest.advice import assistant
-from app.invest.analysis import dart, policy, scorelog, screening, valuation
+from app.invest.analysis import dart, disclosures, policy, scorelog, screening, valuation
 from app.invest.broker import trading
 from app.invest.broker.toss import TossError
 from app.invest.broker.trading import TradeError
 from app.invest.debate import agents, scopes
-from app.invest.marketdata import market, news
+from app.invest.marketdata import figures, market, news
 from app.invest.marketdata.market import MarketError
 from app.invest.ops import autopilot, desk
 from app.invest.ops.desk import CASH_KO, REGIME_KO
@@ -42,6 +43,7 @@ from app.llm.routes import as_agent
 
 REGIME_MOVE = 0.008       # 코드 대체: 코스피가 이만큼 넘게 오르면 위험 선호, 내리면 위험 회피
 NEWS_TITLES = 10
+PEOPLE_TITLES = 2      # 시장 분석에 넣는 인물마다 기사 수
 WORKERS = 4
 RATE_KEYS = ("1d", "1w", "1mo", "3mo")
 RATE_KO = {"1d": "1일", "1w": "1주", "1mo": "1개월", "3mo": "3개월"}
@@ -53,7 +55,9 @@ MAX_UNDERWEIGHT = 3
 IDEAS = 8
 WATCH_MAX = 20            # 리스크 감시 종목 수 (급락·급등 기준은 데스크 설정 drop_pct · jump_pct · breakout_pct)
 ADHOC_WAIT_MIN = 30
-ALERT_KO = {"drop": "보유 종목 급락", "jump": "보유 종목 급등 — 차익 실현 검토", "breakout": "발굴 종목 급등"}
+ALERT_KO = {"drop": "보유 종목 급락", "jump": "보유 종목 급등 — 차익 실현 검토", "breakout": "발굴 종목 급등",
+            "disclosure": "보유 종목 공시"}
+DISCLOSURE_ALERT = -2  # 보유 종목에 오늘 이 영향 이하 공시(유상증자 · 감자 · 횡령 등)나 풍문 조회공시가 나오면 경보
 
 
 def _pct(v: float | None) -> str:
@@ -90,7 +94,7 @@ def _who(key: str) -> str:
 
 # ---- 1) 시장 분석 ----
 def market_facts(conn, p, notes: list[str]) -> dict:
-    f: dict = {"indicators": [], "session": None, "breadth": {}, "leaders": [], "news": []}
+    f: dict = {"indicators": [], "session": None, "breadth": {}, "leaders": [], "news": [], "people": []}
     try:
         f["indicators"] = [{k: i.get(k) for k in ("symbol", "name", "unit", "price", "change_rate")} for i in p.indicators()]
     except (MarketError, TossError) as e:
@@ -118,6 +122,12 @@ def market_facts(conn, p, notes: list[str]) -> dict:
                      for n in (news.collect(conn, [], True, per_query=8, on_error=notes.append).get(None) or [])[:NEWS_TITLES]]
     except Exception as e:  # noqa: BLE001 — 뉴스는 곁들이는 자료라 무엇이 실패해도 분석은 이어 간다
         notes.append(f"시장 뉴스를 받지 못했어요: {e}")
+    try:  # 유명인 발언 · 소문 (지난 하루, 인물마다 PEOPLE_TITLES 개)
+        f["people"] = [{"name": x["name"], "role": x["role"], "items": [{"title": i["title"], "kind": i["kind_ko"], "at": (i["published_at"] or "")[5:16]}
+                                                                          for i in x["items"][:PEOPLE_TITLES]]}
+                       for x in figures.collect(conn, days=1, on_error=lambda _m: None) if x["items"]]
+    except Exception as e:  # noqa: BLE001
+        notes.append(f"유명인 발언을 받지 못했어요: {e}")
     return f
 
 
@@ -134,6 +144,10 @@ def market_text(f: dict, intents: str, reason: str = "", goal: str = "") -> str:
         lines.append("거래대금 상위: " + ", ".join(f"{x['name']} {_pct(x['change_rate'])}" for x in f["leaders"]))
     if f["news"]:
         lines += ["시장 뉴스 제목:"] + [f"- {n['title']} ({n['source'] or ''} {n['at']})" for n in f["news"]]
+    if f.get("people"):
+        lines.append("유명인 발언 · 소문 (보도 제목, 지난 하루 — '소문' · '스캔들'은 확인되지 않은 것):")
+        for x in f["people"]:
+            lines += [f"- {x['name']}({x['role']}) [{i['kind']}] {i['title']} ({i['at']})" for i in x["items"]]
     lines.append(f"\n운용 지시:\n{intents or '없음'}")
     if goal:
         lines.append(f"\n운용 목표:\n{goal}")
@@ -159,6 +173,8 @@ MARKET_SYSTEM = f"""당신은 자산운용사의 시장 전략가 {_who('strateg
 - regime: risk_on(위험 선호) · neutral(중립) · risk_off(위험 회피). 지수·금리·상승/하락 상위 평균·거래대금 상위·뉴스 제목을 근거로.
 - headline 은 한 줄(30자 안팎), summary 는 2~4문장 시황 — 자료에 있는 숫자만 쓰세요.
 - favor·avoid: 오늘 주목할/피할 테마·업종 0~4개(짧은 말). cash: 현금 비중 의견 raise(늘리기)·keep(유지)·lower(줄이기 = 더 투자).
+- 유명인 발언 · 소문(보도 제목)이 있으면 시장 심리 재료로 보세요. 발언(정책 · 실적 전망)은 관련 테마에 반영할 수 있지만, '소문' · '스캔들'은
+  확인되지 않은 것이라 사실처럼 쓰지 말고 '그 인물이 이끄는 회사 · 테마의 단기 변동 위험'으로만 다루세요.
 - 운용 지시가 있으면 그 성향(공격적·보수적)을 반영하세요. 수익을 장담하지 말고, 한국어로."""
 
 
@@ -499,10 +515,28 @@ def watch(conn, p, now: datetime) -> list[dict]:
         if kind:
             out.append({"symbol": sym, "name": held.get(sym) or ideas.get(sym) or sym, "kind": kind, "change": round(ch, 4),
                         "held": sym in held})
+    return out + disclosure_alerts(conn, held, now)
+
+
+def disclosure_alerts(conn, held: dict[str, str], now: datetime) -> list[dict]:
+    """보유 종목의 오늘 공시 중 큰 악재(영향 ≤ DISCLOSURE_ALERT)나 풍문 조회공시 → 경보. OpenDART 키가 없으면 없음(공시 캐시 TTL 안이면 다시 묻지 않음)."""
+    out = []
+    today = now.date().isoformat()
+    for sym, name in held.items():
+        disclosures.refresh(conn, sym, now.replace(tzinfo=None))
+        hits = [x for x in disclosures.recent(conn, sym, 1, now.date())
+                if x["date"] == today and (x["impact"] <= DISCLOSURE_ALERT or x["kind"] in disclosures.RUMOR_KINDS)]
+        if hits:
+            x = hits[0]
+            out.append({"symbol": sym, "name": name, "kind": "disclosure", "change": None, "held": True,
+                        "disclosure": {"label": x["label"], "title": x["title"], "impact": x["impact"], "url": x["url"]}})
     return out
 
 
 def _alert_line(a: dict) -> str:
+    if a["kind"] == "disclosure":
+        d = a["disclosure"]
+        return f"{a['name']}({a['symbol']}) 공시 · {d['label']} ({d['title']})"
     return f"{a['name']}({a['symbol']}) 오늘 {_pct(a['change'])} · {ALERT_KO[a['kind']]}"
 
 
