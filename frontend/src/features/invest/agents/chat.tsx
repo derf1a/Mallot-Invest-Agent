@@ -116,6 +116,12 @@ function build(messages: ChatMessage[], run: Run | null, candidates: Candidate[]
         items.push({ kind: 'pill', key: `sc${m.seq}`, text: `⏱ 다음 판단 · ${m.note}${m.reason ? ` — ${m.reason}` : ''}`,
           tone: m.accepted || m.action === 'none' ? undefined : 'warn' })
         break
+      case 'risk_limits': {
+        const pct = (v: number | null) => (v == null ? '기본' : `${v}%`)
+        items.push({ kind: 'pill', key: `rl${m.seq}`,
+          text: `⚖ ${m.by} 비중 한도 조정 · ${m.changes.map((c) => `${c.what} ${pct(c.before)} → ${pct(c.after)}`).join(', ')}${m.reason ? ` — ${m.reason}` : ''}` })
+        break
+      }
       case 'end':
         items.push({ kind: 'pill', key: `e${m.seq}`, text: m.message, tone: m.status === 'succeeded' ? undefined : 'warn' })
         break
