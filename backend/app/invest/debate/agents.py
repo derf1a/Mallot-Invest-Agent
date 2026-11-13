@@ -138,7 +138,8 @@ TOOL_INFO: dict[str, dict] = {
     "get_technicals": {"title": "기술 지표", "desc": "이동평균(5·20·60·120일), RSI14, MACD, 20일 변동성, 기간 수익률, 거래량 비율, 기간 고저(일봉 고가·저가). "
                                                "일봉이라 현재가가 조금 늦을 수 있어요 — 지금 가격은 get_quote 기준.",
                        "schema": _schema()},
-    "get_intraday": {"title": "분봉 흐름", "desc": "오늘(또는 직전 거래일) 정규장 분봉 요약 — 시가·고가·저가·현재가·VWAP·최근 30분 흐름.",
+    "get_intraday": {"title": "분봉 흐름", "desc": "오늘(또는 직전 거래일) 정규장 분봉 요약 — 시가(open, get_quote 와 같은 일봉 시가)·정규장 첫 체결가(regular_open)·"
+                                         "정규장 고가·저가·현재가·VWAP·최근 30분 흐름.",
                      "schema": _schema()},
     "get_orderbook": {"title": "호가", "desc": "매도·매수 호가 상위 5단계와 잔량, 매수/매도 잔량 비율.", "schema": _schema()},
     "get_investor_flow": {"title": "투자자별 매매", "desc": "최근 거래일 개인·외국인·기관 순매수 수량과 합계 (국내 종목).",
@@ -204,8 +205,8 @@ def _handlers(s: Session) -> dict[str, Callable[[dict], Awaitable[object]]]:
 
     async def get_quote(a: dict) -> dict:
         snap = market.snapshot(p, pick(a))
-        keys = ("symbol", "name", "price", "currency", "prev_close", "change_rate", "open", "high", "low", "volume",
-                "avg_volume_20", "range_high", "range_low", "range_bars", "upper_limit", "lower_limit", "tick")
+        keys = ("symbol", "name", "price", "currency", "prev_close", "change_rate", "open", "open_basis", "high", "low",
+                "volume", "avg_volume_20", "range_high", "range_low", "range_bars", "upper_limit", "lower_limit", "tick")
         return {**{k: snap.get(k) for k in keys}, "data_source": _source(p)}
 
     async def get_price_history(a: dict) -> dict:
@@ -230,16 +231,8 @@ def _handlers(s: Session) -> dict[str, Callable[[dict], Awaitable[object]]]:
 
     async def get_intraday(a: dict) -> dict:
         sym = pick(a)
-        ms = market.session_bars(p.candles(sym, "1m", INTRADAY_BARS))
-        if not ms:
-            return {"symbol": sym, "bars": 0}
-        vol = sum(m["v"] for m in ms) or 1
-        vwap = sum(m["c"] * m["v"] for m in ms) / vol
-        tail = ms[-30:]
-        return {"symbol": sym, "day_open": ms[0]["o"], "high": max(m["h"] for m in ms), "low": min(m["l"] for m in ms),
-                "last": ms[-1]["c"], "vwap": _r(vwap), "bars": len(ms), "from": ms[0]["t"], "to": ms[-1]["t"],
-                "last_30m_change": _r(tail[-1]["c"] / tail[0]["o"] - 1, 4) if tail[0]["o"] else None,
-                "data_source": _source(p)}
+        out = market.intraday_summary(p.candles(sym, "1m", INTRADAY_BARS), p.candles(sym, "1d", 5))
+        return {"symbol": sym, **out, "data_source": _source(p)} if out["bars"] else {"symbol": sym, "bars": 0}
 
     async def get_orderbook(a: dict) -> dict:
         sym = pick(a)
