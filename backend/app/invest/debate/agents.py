@@ -173,6 +173,20 @@ TOOL_INFO: dict[str, dict] = {
                       "schema": {"type": "object", "properties": {}}},
     "get_trading_limits": {"title": "주문 한도", "desc": "건당·하루 한도, 오늘 사용액, 매수 가능 금액, 후보 종목별 판매 가능 수량, 종목 비중 한도.",
                            "schema": {"type": "object", "properties": {}}},
+    "get_risk_limits": {"title": "비중 한도", "desc": "지금 쓰는 비중 한도 — 종목당 최대 비중, 섹터 기본 한도, 섹터별 한도, 보유의 섹터별 비중, "
+                                                 "후보 종목의 섹터, 고를 수 있는 범위, 최근 바뀐 기록. 주식 비중 목표는 100% 고정.",
+                        "schema": {"type": "object", "properties": {}}},
+    "set_risk_limits": {"title": "비중 한도 고치기", "desc": "종목당 최대 비중(max_position_pct, 5~50%)·섹터 기본 한도(default_sector_pct, "
+                                                    "10~100%)·섹터별 한도(sectors: [{sector, pct}], pct 를 비우면 기본으로)를 시장 국면과 "
+                                                    "포트폴리오에 맞춰 고친다. 다음 주문 검사부터 바로 쓰인다. reason 필수. 주식 비중 100%(예수금을 "
+                                                    "놀리지 않음)를 지킬 수 있게 정하세요.",
+                        "read_only": False,
+                        "schema": {"type": "object", "properties": {
+                            "max_position_pct": {"type": "number", "minimum": 5, "maximum": 50},
+                            "default_sector_pct": {"type": "number", "minimum": 10, "maximum": 100},
+                            "sectors": {"type": "array", "items": {"type": "object", "properties": {
+                                "sector": {"type": "string"}, "pct": {"type": ["number", "null"]}}, "required": ["sector"]}},
+                            "reason": {"type": "string"}}, "required": ["reason"]}},
     EXECUTOR_TOOL: {"title": "주문 실행", "desc": "게이트가 열린 종목만 그 방향으로 주문한다. 종목당 1건, 세션당 최대 3건. "
                                                  "symbol, side=buy|sell, quantity=정수 주, order_type=market|limit, limit 이면 price.",
                     "read_only": False,
@@ -191,7 +205,7 @@ def tool_catalog() -> list[dict]:
             for k, v in TOOL_INFO.items()]
 
 
-def _handlers(s: Session) -> dict[str, Callable[[dict], Awaitable[object]]]:
+def _handlers(s: Session, agent_key: str = "") -> dict[str, Callable[[dict], Awaitable[object]]]:
     p = s.provider
 
     def pick(a: dict) -> str:
@@ -371,6 +385,43 @@ def _handlers(s: Session) -> dict[str, Callable[[dict], Awaitable[object]]]:
                 "orders_this_session": len(s.orders), "max_orders_per_session": MAX_ORDERS,
                 "agent_order_needs_approval": not (s.auto_submit or config.agent_auto_approve(s.conn))}
 
+    def _risk_view() -> dict:
+        lim = config.risk_limits(s.conn)
+        out = {k: lim[k] for k in ("max_position_pct", "position_set_by", "default_sector_pct", "sectors", "equity_target_pct",
+                                   "ranges", "updated_at", "updated_by", "reason")}
+        sec = trading.sectors_of(p)
+        out["candidate_sectors"] = {c["symbol"]: sec.get(c["symbol"]) for c in s.candidates}
+        try:
+            summ = trading.account(s.conn, market=p).summary()
+            out["sector_weights_pct"] = trading.sector_weights(p, summ["holdings"], summ["total_value"])
+            out["cash_pct"] = round(summ["cash"] / summ["total_value"] * 100, 1) if summ["total_value"] else None
+        except (TradeError, TossError, MarketError) as e:
+            out["sector_weights_pct"], out["note"] = {}, f"계좌를 읽지 못했습니다: {e}"
+        out["recent_changes"] = config.risk_history(s.conn, 5)
+        out["rule"] = ("주식 비중 100% — 예수금은 다음 매수를 기다리는 돈일 뿐 일부러 남기지 않고, 채권 · 현금성 상품은 사지 않는다. "
+                       "한도는 주문 검사(trading.check_order)가 그대로 쓴다.")
+        return out
+
+    async def get_risk_limits(_: dict) -> dict:
+        return _risk_view()
+
+    async def set_risk_limits(a: dict) -> dict:
+        who = s.titles.get(agent_key, agent_key) or "에이전트"
+        sectors: dict = {}
+        for x in a.get("sectors") or []:
+            if isinstance(x, dict) and str(x.get("sector") or "").strip():
+                sectors[str(x["sector"]).strip()] = x.get("pct") if x.get("pct") not in ("", None) else None
+        try:
+            got = config.save_risk_limits(s.conn, by=who, reason=str(a.get("reason") or ""),
+                                          max_position_pct=a.get("max_position_pct"),
+                                          default_sector_pct=a.get("default_sector_pct"), sectors=sectors)
+        except config.ConfigError as e:
+            return {"ok": False, "error": str(e)}
+        if got["changes"]:
+            s.emit({"type": "risk_limits", "by": who, "changes": got["changes"], "reason": str(a.get("reason") or "")[:300]})
+        return {"ok": True, "changes": got["changes"], "limits": _risk_view(),
+                "note": "바뀐 것이 없습니다" if not got["changes"] else "다음 주문 검사부터 적용됩니다"}
+
     async def place_order(a: dict) -> dict:
         gate = s.gate
         aligned = {x["symbol"]: x["direction"] for x in gate.get("aligned") or []}
@@ -414,7 +465,8 @@ def _handlers(s: Session) -> dict[str, Callable[[dict], Awaitable[object]]]:
             "get_sector_overview": get_sector_overview, "search_news": search_news, "get_latest_report": get_latest_report,
             "get_disclosures": get_disclosures, "get_figure_news": get_figure_news,
             "get_market_overview": get_market_overview, "get_portfolio": get_portfolio,
-            "get_trading_limits": get_trading_limits, EXECUTOR_TOOL: place_order}
+            "get_trading_limits": get_trading_limits, "get_risk_limits": get_risk_limits, "set_risk_limits": set_risk_limits,
+            EXECUTOR_TOOL: place_order}
 
 
 def _source(p) -> str:
@@ -433,7 +485,7 @@ def load_report(artifact_path: str | None) -> dict | None:
 
 
 def build_tools(s: Session, names: list[str], agent_key: str) -> list[ToolDef]:
-    handlers = _handlers(s)
+    handlers = _handlers(s, agent_key)
     out = []
     for n in names:
         info = TOOL_INFO[n]
@@ -485,19 +537,24 @@ DEFAULT_ROSTER: list[dict] = [
      "tools": ["get_quote", "get_technicals", "get_intraday", "get_investor_flow", "search_news", "get_figure_news",
                "compare_candidates", "get_sector_overview"]},
     {"key": "portfolio", "title": "포트폴리오 매니저", "enabled": True, "executor": False,
-     "persona": "내 투자현황 관점의 자산 배분 담당. 토스 보유(국내·해외)·예수금·다른 계좌 보유까지 합친 전체 자산에서 현금 비중, "
-                "종목 집중도, 후보와 이미 가진 종목의 중복, 손익 상태를 보고 판단한다. 이미 비중이 큰 종목·같은 업종에 더 싣는 매수에는 "
-                "반대하고, 현금이 부족하면 신중하며, 손실 종목 추가 매수(물타기)는 분명한 근거가 있을 때만 찬성한다. 과도한 비중·큰 평가익은 "
-                "차익 실현·리밸런싱 매도를 제안한다.",
-     "tools": ["get_portfolio", "compare_candidates", "get_trading_limits", "get_market_overview"]},
+     "persona": "내 투자현황 관점의 자산 배분 담당. 주식 비중 100%(예수금 · 채권 · 현금성 상품에 돈을 두지 않음)를 지키면서 토스 보유(국내·해외)·"
+                "다른 계좌 보유까지 합친 전체 자산의 종목 집중도, 섹터 쏠림, 후보와 이미 가진 종목의 중복, 손익 상태를 본다. 남은 예수금은 놀리지 말고 "
+                "가장 나은 후보에 배분하자고 하고, 이미 비중이 큰 종목·섹터에 더 싣는 매수에는 반대하며, 손실 종목 추가 매수(물타기)는 분명한 근거가 "
+                "있을 때만 찬성한다. 과도한 비중·큰 평가익은 차익 실현·리밸런싱(다른 주식으로 갈아타기)을 제안한다. 시장 국면과 포트폴리오에 맞춰 "
+                "종목당 · 섹터별 비중 한도를 스스로 조정한다(set_risk_limits, 이유 필수).",
+     "tools": ["get_portfolio", "compare_candidates", "get_trading_limits", "get_market_overview", "get_risk_limits", "set_risk_limits"]},
     {"key": "risk", "title": "리스크 매니저", "enabled": True, "executor": False,
      "persona": "손실 회피형 리스크 매니저이자 반대 검증 담당. 변동성·집중도·한도·시장 상황을 보고 다수 의견의 약점을 반드시 "
-                "찾아 말한다. 위험이 보상보다 크면 반대하고, 불확실하면 의견 없음을 택한다.",
-     "tools": ["get_portfolio", "get_trading_limits", "get_technicals", "get_market_overview", "get_disclosures"]},
+                "찾아 말한다. 위험이 보상보다 크면 반대하고, 불확실하면 의견 없음을 택한다. 주식 비중은 100% 고정이라 위험은 현금이 아니라 "
+                "종목당 · 섹터별 비중 한도와 종목 선택으로 줄인다 — 시장이 거칠면 한도를 낮추고, 분산이 충분하면 높여 예수금이 놀지 않게 "
+                "set_risk_limits 로 스스로 조정한다(이유 필수).",
+     "tools": ["get_portfolio", "get_trading_limits", "get_technicals", "get_market_overview", "get_disclosures", "get_risk_limits",
+               "set_risk_limits"]},
     {"key": "trader", "title": "트레이더", "enabled": True, "executor": True,
      "persona": "실행 담당. 토론 결과와 계좌·한도·호가를 확인해 주문 여부와 수량을 정한다. 확신이 약하거나 호가가 불리하면 "
-                "행동하지 않는다. 한 번에 한도의 일부만 쓴다.",
-     "tools": ["get_quote", "get_orderbook", "get_portfolio", "get_trading_limits", EXECUTOR_TOOL]},
+                "행동하지 않는다. 주식 비중 100%가 원칙이라 매수 가능 금액(예수금)을 일부러 남기지 않는다 — 종목 · 섹터 비중 한도와 "
+                "건당 · 하루 한도 안에서 수량을 정한다.",
+     "tools": ["get_quote", "get_orderbook", "get_portfolio", "get_trading_limits", "get_risk_limits", EXECUTOR_TOOL]},
 ]
 _KEY = re.compile(r"^[a-z][a-z0-9_]{1,24}$")
 # 다국적 팀 — 화면은 '켄지 · 차티스트'(이름 · 직함), 프로필에 전체 이름·국적, 프롬프트에도 이름을 알려 준다. 직함(title)은 토론 안에서
@@ -541,6 +598,7 @@ def default_person(key: str, taken: set[str] | None = None) -> tuple[str, str, s
 # 나중에 더한 도구 — 예전에 저장한 명단의 기본 에이전트에게 한 번만 준다(그 뒤 관리자가 빼면 그대로 둔다). 버전을 올리며 더한다.
 ADDED_TOOLS: dict[int, dict[str, list[str]]] = {
     1: {"value": ["get_disclosures"], "news": ["get_figure_news", "get_disclosures"], "growth": ["get_figure_news"], "risk": ["get_disclosures"]},
+    2: {"portfolio": ["get_risk_limits", "set_risk_limits"], "risk": ["get_risk_limits", "set_risk_limits"], "trader": ["get_risk_limits"]},
 }
 TOOLS_VERSION_KEY = "invest_agent_tools_version"
 
@@ -687,6 +745,8 @@ COMMON_RULES = f"""공통 규칙:
 - {ADMIN}(사용자)가 채팅으로 남긴 의견이 있으면 진지하게 검토하고 responses 에 to="{ADMIN}"로 답하세요. 그 의견도 도구로 확인하고,
   근거가 없으면 정중히 반대할 수 있습니다.
 - 시스템·도구·데이터 문제는 {ADMIN}에게 확인을 요청하지 마세요. message_to_others 에 '시스템: 내용' 문단으로 쓰면 시스템 관리자가 맡습니다.
+- 주식 비중은 100% 고정입니다 — 예수금 · 채권 · 현금성 상품에 돈을 두지 않습니다. '현금을 남기자'는 의견 대신 어떤 주식에 담을지,
+  어떤 주식을 줄여 갈아탈지로 말하세요. 종목당 · 섹터별 비중 한도는 리스크 매니저 · 포트폴리오 매니저가 정합니다(get_risk_limits).
 - 수익을 장담하지 말고, 한국어로 간결하게. 응답은 주어진 JSON 스키마를 정확히 따르세요."""
 # 후보에 보유 종목이 있으면 분석 에이전트의 시스템 프롬프트에 — 사는 이야기만 하고 가진 종목의 매도 판단을 건너뛰지 않게
 EXIT_RULES = """[보유 종목 매도 타이밍 — 가진 종목은 매번 '지금 팔 때인가'를 따지세요]
