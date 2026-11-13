@@ -13,7 +13,9 @@
 - 입장판(Board): 에이전트·종목별 최신 입장과 표의 무게(track.weight = 확신 × 지난 판단 성과). STALE_MIN 분이 지나면 빠진다.
   의견 없음은 무게가 없다 — 머릿수의 분모에 들어가 반대처럼 작동하지 않게.
 - 트레이더(언제든): 대화가 끝날 때마다 입장판을 본다 — 주요 의견 무게가 PROPOSE_MIN 이상이고 반대가 AGAINST_MAX 이하면 주문 안건이 된다.
-  승인 없이 제출, 같은 종목·같은 방향은 COOLDOWN_MIN 분에 한 번(반대 방향은 막지 않음 — 산 뒤 바로 손절할 수 있게), 하루 MAX_DAY_ORDERS 건.
+  승인 없이 제출, 같은 종목·같은 방향은 COOLDOWN_MIN 분에 한 번(반대 방향은 막지 않음 — 산 뒤 바로 손절할 수 있게), 하루 MAX_DAY_ORDERS 건
+  (오늘 에이전트 주문을 DB 로 셈 — order_guard.day_status, get_trading_limits 와 같은 수 · 같은 문구). 수량은 찬성한 에이전트가 낸 제안 수량
+  (views 의 quantity)의 최대까지, 같은 실행·종목·방향의 중복은 place_order 도구가 막는다(order_guard). 오늘 낸 주문은 대화 프롬프트에 보인다.
   트레이더 점검 때는 계좌·입장판을 보고 스스로 사거나 팔 종목을 내놓을 수 있고 → 그 종목으로 바로 대화가 열려 입장판이 받쳐 주면 주문한다.
 - 필수 의견(주문 전): 트레이더에게 넘기기 전에 그 종목의 찬반이 없는 분석 에이전트 전원에게 묻는다. 의견 없음은 받지 않고 POLL_TRIES 번까지
   묻되, 근거가 약하면 낮은 확신으로 답하게 한다(무게가 작아 막지 않는다). 최종 판단(Board.final, place_order 도구가 검사): 매수 = 전원 응답 +
@@ -37,7 +39,7 @@ from app.invest.analysis import exits, policy, screening
 from app.invest.broker import config, trading
 from app.invest.broker.toss import TossError
 from app.invest.broker.trading import TradeError
-from app.invest.debate import agents, scopes, track
+from app.invest.debate import agents, order_guard, scopes, track
 from app.invest.marketdata import market
 from app.invest.marketdata.market import MarketError
 from app.invest.ops import autopilot, desk
@@ -60,7 +62,7 @@ AGAINST_MAX = 1.0    # 허용하는 반대 무게 — 보수적 기준 (보통 �
 MOVE = 0.02
 EXIT_CHECK_MIN = 5   # 보유 종목 매도 신호를 이만큼마다 다시 잰다
 COOLDOWN_MIN = 30
-MAX_DAY_ORDERS = 6
+MAX_DAY_ORDERS = order_guard.MAX_DAY_ORDERS
 POLL_TRIES = 2
 POLL_TURNS = 4
 ASK_GAP_MIN = 10
@@ -89,7 +91,7 @@ class Board:
             if not v.get("implicit"):
                 self.views.setdefault(st["agent"], {})[v["symbol"]] = {
                     "stance": v["stance"], "confidence": v["confidence"], "weight": track.weight(v["confidence"], self.skill.get(st["agent"], 1.0)),
-                    "reason": v.get("reason") or "", "at": now, "title": st["title"]}
+                    "reason": v.get("reason") or "", "at": now, "title": st["title"], "quantity": v.get("quantity")}
 
     def stance(self, agent: str, symbol: str, now: datetime) -> str | None:
         v = self.views.get(agent, {}).get(symbol)
@@ -121,6 +123,10 @@ class Board:
 
     def fresh(self, symbol: str, now: datetime) -> list[dict]:
         return [v for vs in self.views.values() if (v := vs.get(symbol)) and now - v["at"] <= timedelta(minutes=STALE_MIN)]
+
+    def sizes(self, symbol: str, direction: str, now: datetime) -> dict | None:
+        """그 방향에 찬성한 최신 입장이 낸 제안 수량 (order_guard.proposals) — 없으면 None(막지 않음)."""
+        return order_guard.proposals([(v["title"], v) for v in self.fresh(symbol, now)], direction)
 
     def symbols(self, now: datetime) -> list[str]:
         out: list[str] = []
@@ -213,7 +219,7 @@ def _answers_text(answers: list[str]) -> str:
 def stream_prompt(s: agents.Session, rnd: int, trig: dict, recent: list[dict], board: str, answers: list[str] = ()) -> str:
     talk = "\n\n".join(agents._statement_text(s, st) for st in recent) or "아직 없음"
     return (f"라운드 {rnd} — 상시 운용 채널의 대화입니다 (정기 회의 없이 계속 이야기해요). 계기: {trig['text']}\n"
-            f"볼 종목:\n{agents._candidates_text(s)}\n" + agents._notes_text(s)
+            f"볼 종목:\n{agents._candidates_text(s)}\n" + order_guard.orders_text(s.conn, s.symbols) + agents._notes_text(s)
             + f"\n지금 입장판 (최근 {STALE_MIN}분, 에이전트별 최신 입장):\n{board}\n{_answers_text(list(answers))}\n최근 대화:\n{talk}\n\n"
               "할 일: 계기와 관련된 자료를 도구로 확인하고, 볼 종목마다 매수(buy)/매도(sell)/의견 없음(none)과 이유를 views 에 내세요. 지금 사거나 팔 이유가 보이면 "
               "조건을 달아 미루지 말고 buy·sell 로 내세요 — none 은 정말 움직일 이유가 없을 때만. " + agents._exit_ask(s)
@@ -226,22 +232,25 @@ def stream_prompt(s: agents.Session, rnd: int, trig: dict, recent: list[dict], b
               f"주요 의견 무게가 {PROPOSE_MIN:g} 이상·반대 {AGAINST_MAX:g} 이하로 모이면 주문 안건이 되고, 전원의 찬반을 받아 {FOR_MIN:g} 이상이면 그 방향으로 주문합니다.")
 
 
-def trader_review_prompt(s: agents.Session, board: str, orders_left: int) -> str:
+def trader_review_prompt(s: agents.Session, board: str, day: dict) -> str:
     return (f"라운드 0 — 트레이더 점검 (상시 운용). 지금 계좌·보유·입장판을 보고, 지금 사거나 팔아야 할 종목이 있으면 views 에 그 방향을 "
             f"내세요(예: 목표 비중까지 남은 현금, 차익 실현, 손실 한도 접근). 보유 종목은 '매도 점검' 줄(평단·손익·비중·신호)을 보고 지금 팔 때인지 "
             f"(차익 실현·손절·추세 꺾임·비중 초과, 전량 또는 일부) 꼭 따지세요. 그 종목으로 분석 에이전트들과 바로 대화가 열리고 입장판이 받쳐 "
-            f"주면 주문합니다. 없으면 views 를 비우세요.\n볼 종목:\n{agents._candidates_text(s)}\n입장판:\n{board}\n"
-            f"오늘 남은 주문 {orders_left}건. thesis 에 판단 요지를, message_to_others 에 분석 에이전트에게 부탁할 것을 쓰세요.")
+            f"주면 주문합니다. 없으면 views 를 비우세요.\n볼 종목:\n{agents._candidates_text(s)}\n"
+            + order_guard.orders_text(s.conn, s.symbols) + f"입장판:\n{board}\n"
+            f"{order_guard.day_text(day)}. thesis 에 판단 요지를, message_to_others 에 분석 에이전트에게 부탁할 것을 쓰세요.")
 
 
-def trade_prompt(s: agents.Session, gate: dict, board: str, why: str, orders_left: int) -> str:
+def trade_prompt(s: agents.Session, gate: dict, board: str, why: str, day: dict) -> str:
     opened = "\n".join(f"- {s.name_of(x['symbol'])} ({x['symbol']}): {agents.STANCE_KO[x['direction']]} 방향만 — "
-                       f"{gate['symbols'][x['symbol']]['reason']}" for x in gate["aligned"])
+                       f"{gate['symbols'][x['symbol']]['reason']} · {order_guard.proposals_text(s.sizes.get(x['symbol']))}" for x in gate["aligned"])
     return (f"상시 운용 · 토스증권 실계좌 · 승인 없이 바로 제출됩니다. 계기: {why}\n" + agents._goal_text(s) + agents._notes_text(s)
             + f"무게 기준을 넘긴 종목 (분석 에이전트 전원의 필수 의견까지 받은 결과):\n{opened}\n"
+            + order_guard.orders_text(s.conn, s.symbols)
             + f"\n입장판:\n{board}\n\n할 일: get_portfolio·get_trading_limits·get_quote·get_orderbook 으로 계좌·한도·호가를 확인하고, 위 종목은 그 방향으로 주문하세요. "
               f"무게 기준을 넘긴 결정이라 수량·가격은 정하되 관망(hold)은 한도·현금·호가·찬성 의견의 가격 조건 때문에 주문이 불가능할 때만 그 이유와 함께 고르세요. "
-              f"주문은 place_order 로 종목당 한 번(오늘 남은 {orders_left}건, 같은 종목·방향은 {COOLDOWN_MIN}분에 한 번). "
+              f"수량은 찬성한 에이전트의 제안 수량이 있으면 그 최대까지(넘으면 시스템이 거절). "
+              f"주문은 place_order 로 종목당 한 번(이번 대화 {s.max_orders}건까지 · {order_guard.day_text(day)}, 같은 종목·방향은 {COOLDOWN_MIN}분에 한 번). "
             + (agents.SELL_SIZING + " " if any(x["direction"] == "sell" for x in gate["aligned"]) else "")
             + f"운용 목표(주식 비중·종목 비중·손실 한도)를 지키세요. 마지막에 decisions·rationale 을 JSON 으로 — "
               "rationale 에는 이번에 내는 주문(없으면 관망 이유)만, 앞서 낸 주문은 다시 적지 마세요.")
@@ -592,7 +601,8 @@ class Stream:
     async def review(self, now: datetime) -> None:
         """트레이더 점검 — 스스로 사거나 팔 종목을 내놓으면 그 종목으로 대화가 열린다."""
         self.last_trader = now
-        if self._blocked():
+        day = order_guard.day_status(self.conn)
+        if self._blocked() or day["agent_orders_left_today"] <= 0:  # 오늘 낼 주문이 남지 않았으면 제안해도 주문이 안 된다
             return
         mine = [c["symbol"] for c in self.candidates if c.get("held")]
         held = [sym for sym in exits.urgent(self.checks) if sym in mine] + [sym for sym in mine if sym not in self.checks]
@@ -604,7 +614,7 @@ class Stream:
         try:
             with as_agent(self.executor["key"]):
                 raw = await agents.LLM("agent_action", agents.system_prompt(self.executor, s),
-                                       trader_review_prompt(s, board, MAX_DAY_ORDERS - len(self.orders)), agents.OPINION_SCHEMA,
+                                       trader_review_prompt(s, board, day), agents.OPINION_SCHEMA,
                                        agents.build_tools(s, [t for t in self.executor["tools"] if t != agents.EXECUTOR_TOOL],
                                                           self.executor["key"]), self.model, 10)
         except LLMError as e:
@@ -627,7 +637,8 @@ class Stream:
 
     @trace.traced("step", "주문 판단")
     async def trade(self, now: datetime, why: str) -> None:
-        left = MAX_DAY_ORDERS - len(self.orders)
+        day = order_guard.day_status(self.conn)  # 오늘 에이전트 주문을 DB 로 — 채널이 다시 열려도 같은 기준, get_trading_limits 와 같은 수
+        left = day["agent_orders_left_today"]
         if left <= 0 or self._blocked():
             return
         syms = self.board.symbols(now)
@@ -647,12 +658,13 @@ class Stream:
         s = self._session(focus, f"주문 — {why}")
         s.gate = gate
         s.max_orders = min(agents.MAX_ORDERS, left)
+        s.sizes = {x["symbol"]: self.board.sizes(x["symbol"], x["direction"], now) for x in gate["aligned"]}
         self.chat({"type": "gate", "gate": gate, "names": names})
         self.chat({"type": "trader_start", "agent": self.executor["key"], "title": self.executor["title"]})
         board = self.board.text(s.symbols, self.names, now)
         try:
             with as_agent(self.executor["key"]):
-                raw = await agents.LLM("agent_action", agents.system_prompt(self.executor, s), trade_prompt(s, gate, board, why, left),
+                raw = await agents.LLM("agent_action", agents.system_prompt(self.executor, s), trade_prompt(s, gate, board, why, day),
                                        agents.TRADER_SCHEMA, agents.build_tools(s, self.executor["tools"], self.executor["key"]), self.model, 14)
             decision = agents.normalize_decision(raw, s, self.executor)
         except (LLMError, TypeError, ValueError) as e:

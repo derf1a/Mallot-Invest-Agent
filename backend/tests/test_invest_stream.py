@@ -21,6 +21,7 @@ from tests.test_invest_ai import Script
 from tests.test_invest_autopilot import at, conn  # noqa: F401 — fixture
 
 TITLES = [a["title"] for a in agents.DEFAULT_ROSTER if not a["executor"]]
+DAY = {"agent_orders_today": 3, "max_agent_orders_per_day": 6, "agent_orders_left_today": 3}
 
 
 def _say(b, agent, stance, confidence, now, symbol="005930"):
@@ -357,7 +358,7 @@ def test_trader_is_told_to_act_when_the_gate_opens(client, conn, broker, at_open
     st = _bare_stream(conn, candidates=["005930"])
     s = st._session(st._focus(["005930"]), "x")
     gate = {"aligned": [{"symbol": "005930", "direction": "buy"}], "symbols": {"005930": {"reason": "r"}}}
-    assert "관망(hold)은 한도·현금·호가·찬성 의견의 가격 조건 때문에 주문이 불가능할 때만" in stream.trade_prompt(s, gate, "없음", "계기", 3)
+    assert "관망(hold)은 한도·현금·호가·찬성 의견의 가격 조건 때문에 주문이 불가능할 때만" in stream.trade_prompt(s, gate, "없음", "계기", DAY)
 
 
 def test_track_scores_judge_against_the_market(client, conn, broker, at_open):  # noqa: F811
