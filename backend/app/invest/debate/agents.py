@@ -374,7 +374,9 @@ def _handlers(s: Session, agent_key: str = "") -> dict[str, Callable[[dict], Awa
 
     async def get_trading_limits(_: dict) -> dict:
         acct = trading.account(s.conn, market=p)
-        lim = config.limits(s.conn)
+        risk = config.risk_limits(s.conn)
+        lim = {**config.limits(s.conn), "max_position_pct": risk["max_position_pct"],  # 지금 쓰는 값 (에이전트가 정했으면 그 값)
+               "default_sector_pct": risk["default_sector_pct"], "sector_limits": risk["sectors"]}
         held = [h["symbol"] for h in acct.summary()["holdings"] if h.get("currency") in (None, "KRW")]  # 볼 종목에 없는 보유도 판매 가능 수량을 본다
         sellable = {**{c["symbol"]: 0.0 for c in s.candidates}, **{sym: acct.sellable(sym) for sym in held}}
         return {"halted": config.halted(s.conn), **lim, "position_limit_basis": "평가액 × |레버리지 배수| (일반 종목은 평가액)",
