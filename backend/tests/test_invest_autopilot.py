@@ -106,6 +106,20 @@ def test_scan_scope_screens_many_stocks(conn, broker):
     assert [c["symbol"] for c in cut["candidates"]][0] == "035420" and len(cut["candidates"]) == 2 and cut["label"] == "시장 스캔"
 
 
+def test_scan_skips_unheld_stocks_one_share_cannot_buy(conn, broker):
+    """1주 가격 > 매수 가능 금액인 미보유 종목(SK하이닉스 371,500원 > 20만 원)은 후보에서 뺀다 — 보유 종목은 팔 수 있어 남긴다."""
+    broker.cash = 200_000
+    broker.positions["035420"] = {"quantity": 3.0, "cost": 570_000.0}   # 1주 375,000원이지만 보유
+    p = SampleMarket()
+    out = scopes.resolve(conn, p, {"scope": "autopilot", "intents": ["하이닉스 좀 잘 봐줘"]}, 6)
+    syms = [c["symbol"] for c in out["candidates"]]
+    prices = {r["symbol"]: r["metrics"]["price"] for r in out["screening"]["rows"] if r["metrics"]}
+    assert "000660" not in syms and "035420" in syms
+    assert all(prices[s_] <= 200_000 for s_ in syms if s_ != "035420" and s_ in prices)
+    assert any("매수 가능 금액(200,000원)보다 큰 미보유" in n and "SK하이닉스(000660)" in n for n in out["notes"])
+    assert scopes.unaffordable([{"symbol": "000660", "metrics": {"price": 371_500}}], [], None) == {}   # 매수 가능 금액을 모르면 거르지 않는다
+
+
 def test_candidates_get_name_and_type_from_master(conn):
     """보유·발굴에서 온 후보는 이름이 코드뿐이거나 유형이 비어 있었다 — 종목 목록(invest_universe), 없으면 종목 정보로 채운다."""
     conn.execute("INSERT INTO invest_universe (symbol, name, market, security_type) VALUES ('018260', '삼성에스디에스', 'KOSPI', 'STOCK')")
