@@ -38,6 +38,7 @@ TOOL_SOURCES = {
     "get_figure_news": "news_rss",
     "get_portfolio": "toss_account", "get_account": "toss_account", "get_buying_power": "toss_account",
     "get_sellable_quantity": "toss_account", "get_order_limits": "toss_account", "place_order": "trading",
+    "get_risk_limits": "trading", "set_risk_limits": "trading",
 }
 
 

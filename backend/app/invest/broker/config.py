@@ -1,4 +1,4 @@
-"""투자 설정 — API 키(.env), 주문 한도, 에이전트 주문 승인 생략, 전체 중지, 주문 PIN.
+"""투자 설정 — API 키(.env), 주문 한도, 에이전트가 정하는 비중 한도(종목당 · 섹터별), 에이전트 주문 승인 생략, 전체 중지, 주문 PIN.
 
 모의 투자는 없다 — 주문은 언제나 토스증권 실계좌로 나간다. 키는 .env 로만 관리하고(설정 화면에서 쓰면 .env 를 고친다),
 나머지는 settings 테이블(JSON)에 둔다. 주문 PIN(MIA_TRADING_PIN)은 화면에서 바꿀 수 없는 환경 변수다 — 로그인 없는 앱이라
@@ -13,6 +13,7 @@ import re
 import sqlite3
 import threading
 import time
+from datetime import datetime
 
 from app.core import envfile
 
@@ -30,6 +31,17 @@ PIN_LOCK_SECONDS = 300
 DEFAULT_LIMITS = {"max_order_krw": 1_000_000, "daily_max_krw": 3_000_000, "max_position_pct": 30.0}
 
 S_LIMITS = "invest_limits"
+S_RISK = "invest_risk_limits"                 # 에이전트(리스크 · 포트폴리오 매니저)가 스스로 정하는 비중 한도
+S_RISK_HISTORY = "invest_risk_limits_history"
+RISK_HISTORY = 30
+# 에이전트가 고를 수 있는 범위 — 코드가 지키는 바깥 울타리 (한 종목에 절반 넘게는 못 싣는다)
+POSITION_RANGE = (5.0, 50.0)
+SECTOR_RANGE = (10.0, 100.0)
+DEFAULT_SECTOR_PCT = 60.0                      # 에이전트가 아직 정하지 않았을 때 섹터 하나의 최대 비중
+EQUITY_TARGET_PCT = 100.0                      # 주식 비중 목표 — 고정. 예수금 · 채권 · 현금성 상품에 돈을 두지 않는다
+# 채권 · 현금성 상품 — 주식 비중 100% 원칙이라 사지 않는다 (종목 이름으로 가린다)
+NON_EQUITY_WORDS = ("채권", "국채", "국고채", "회사채", "통안채", "단기채", "금리", "머니마켓", "MMF", "KOFR", "SOFR",
+                    "파킹", "달러선물", "TDF", "TRF")
 S_AGENT_AUTO = "invest_agent_auto_approve"  # 에이전트(트레이더) 주문을 사용자 승인 없이 바로 낼지 — 기본 꺼짐(승인 필요)
 S_HALTED = "invest_halted"                  # 전체 주문 중지
 S_AGENT_OPTIONS = "invest_agent_options"    # 에이전트 토론 설정 (실험실): 라운드·모델·후보 종목 수
@@ -132,6 +144,112 @@ def limits(conn: sqlite3.Connection) -> dict:
     return out
 
 
+def _pct(value: object, lo: float, hi: float, what: str) -> float:
+    try:
+        v = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        raise ConfigError(f"{what}은(는) 숫자(%)입니다") from None
+    if not math.isfinite(v) or not lo <= v <= hi:
+        raise ConfigError(f"{what}은(는) {lo:g}~{hi:g}% 사이입니다")
+    return round(v, 1)
+
+
+def _risk_raw(conn: sqlite3.Connection) -> dict:
+    raw = _get(conn, S_RISK, {})
+    return raw if isinstance(raw, dict) else {}
+
+
+def risk_limits(conn: sqlite3.Connection) -> dict:
+    """지금 쓰는 비중 한도 — 종목당(에이전트가 정했으면 그 값, 아니면 설정 화면의 max_position_pct) · 섹터 기본 · 섹터별.
+
+    주문 검사(trading.check_order)와 에이전트 도구가 같이 쓴다. 범위를 벗어난 저장값은 무시한다."""
+    raw = _risk_raw(conn)
+    admin = limits(conn)["max_position_pct"]
+    out = {"max_position_pct": admin, "position_set_by": "관리자 설정", "default_sector_pct": DEFAULT_SECTOR_PCT,
+           "sectors": {}, "equity_target_pct": EQUITY_TARGET_PCT, "updated_at": raw.get("updated_at"),
+           "updated_by": raw.get("updated_by"), "reason": raw.get("reason") or "",
+           "ranges": {"max_position_pct": list(POSITION_RANGE), "sector_pct": list(SECTOR_RANGE)}}
+    try:
+        if raw.get("max_position_pct") is not None:
+            out["max_position_pct"] = _pct(raw["max_position_pct"], *POSITION_RANGE, "종목당 한도")
+            out["position_set_by"] = raw.get("updated_by") or "에이전트"
+    except ConfigError:
+        pass
+    try:
+        if raw.get("default_sector_pct") is not None:
+            out["default_sector_pct"] = _pct(raw["default_sector_pct"], *SECTOR_RANGE, "섹터 기본 한도")
+    except ConfigError:
+        pass
+    for name, v in (raw.get("sectors") or {}).items() if isinstance(raw.get("sectors"), dict) else []:
+        try:
+            out["sectors"][str(name)] = _pct(v, *SECTOR_RANGE, "섹터 한도")
+        except ConfigError:
+            pass
+    return out
+
+
+def sector_limit(lim: dict, sector: str | None) -> float:
+    return lim["sectors"].get(sector or "", lim["default_sector_pct"])
+
+
+def risk_history(conn: sqlite3.Connection, limit: int = RISK_HISTORY) -> list[dict]:
+    raw = _get(conn, S_RISK_HISTORY, [])
+    return [h for h in raw if isinstance(h, dict)][-limit:] if isinstance(raw, list) else []
+
+
+def save_risk_limits(conn: sqlite3.Connection, *, by: str, reason: str, max_position_pct: object = None,
+                     default_sector_pct: object = None, sectors: dict | None = None, at: str = "") -> dict:
+    """에이전트가 비중 한도를 고친다 → {limits, changes}. 하나라도 범위를 벗어나면 아무것도 바꾸지 않는다.
+    sectors 의 값이 None 이면 그 섹터 한도를 지운다(섹터 기본 한도로 돌아감). 이유는 꼭 남긴다."""
+    reason = (reason or "").strip()
+    at = at or datetime.now().strftime("%Y-%m-%d %H:%M")
+    if len(reason) < 5:
+        raise ConfigError("한도를 바꾸는 이유(reason)를 적어 주세요")
+    before = risk_limits(conn)
+    raw = _risk_raw(conn)
+    nxt = {"max_position_pct": raw.get("max_position_pct"), "default_sector_pct": raw.get("default_sector_pct"),
+           "sectors": dict(raw.get("sectors") or {}) if isinstance(raw.get("sectors"), dict) else {}}
+    if max_position_pct is not None:
+        nxt["max_position_pct"] = _pct(max_position_pct, *POSITION_RANGE, "종목당 한도")
+    if default_sector_pct is not None:
+        nxt["default_sector_pct"] = _pct(default_sector_pct, *SECTOR_RANGE, "섹터 기본 한도")
+    for name, v in (sectors or {}).items():
+        name = str(name).strip()[:30]
+        if not name:
+            continue
+        if v is None:
+            nxt["sectors"].pop(name, None)
+        else:
+            nxt["sectors"][name] = _pct(v, *SECTOR_RANGE, f"섹터 한도({name})")
+    if len(nxt["sectors"]) > 40:
+        raise ConfigError("섹터별 한도는 40개까지입니다")
+    _put(conn, S_RISK, {**nxt, "updated_at": at, "updated_by": by, "reason": reason[:300]})
+    after = risk_limits(conn)
+    changes = []
+    if before["max_position_pct"] != after["max_position_pct"]:
+        changes.append({"what": "종목당 한도", "before": before["max_position_pct"], "after": after["max_position_pct"]})
+    if before["default_sector_pct"] != after["default_sector_pct"]:
+        changes.append({"what": "섹터 기본 한도", "before": before["default_sector_pct"], "after": after["default_sector_pct"]})
+    for name in sorted(set(before["sectors"]) | set(after["sectors"])):
+        b, a = before["sectors"].get(name), after["sectors"].get(name)
+        if b != a:
+            changes.append({"what": f"섹터 {name}", "before": b, "after": a})
+    if not changes:
+        conn.rollback()
+        return {"limits": before, "changes": []}
+    _put(conn, S_RISK_HISTORY, (risk_history(conn) + [{"at": at, "by": by, "reason": reason[:300], "changes": changes}])[-RISK_HISTORY:])
+    conn.commit()
+    return {"limits": risk_limits(conn), "changes": changes}
+
+
+def non_equity(name: str, security_type: str = "") -> bool:
+    """채권 · 현금성 상품인가 (ETF · ETN 이름으로) — 주식 비중 100% 원칙이라 매수하지 않는다. 일반 주식은 아니다."""
+    if (security_type or "").upper() == "STOCK":
+        return False
+    text = (name or "").upper()
+    return any(w.upper() in text for w in NON_EQUITY_WORDS)
+
+
 def halted(conn: sqlite3.Connection) -> bool:
     return bool(_get(conn, S_HALTED, False))
 
@@ -191,6 +309,7 @@ def snapshot(conn: sqlite3.Connection) -> dict:
         "pin_configured": pin_configured(),
         "trading_blockers": trading_blockers(),
         "limits": limits(conn),
+        "risk_limits": risk_limits(conn),
         "agent_auto_approve": agent_auto_approve(conn),
         "halted": halted(conn),
     }

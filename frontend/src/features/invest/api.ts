@@ -39,8 +39,21 @@ export interface InvestConfig {
   pin_configured: boolean
   trading_blockers: string[]
   limits: Limits
+  /** 에이전트(리스크 · 포트폴리오 매니저)가 정하는 비중 한도 — 주문 검사가 이 값을 쓴다 */
+  risk_limits?: RiskLimits
   agent_auto_approve: boolean
   halted: boolean
+}
+
+export interface RiskLimits {
+  max_position_pct: number
+  position_set_by: string
+  default_sector_pct: number
+  sectors: Record<string, number>
+  equity_target_pct: number
+  updated_at: string | null
+  updated_by: string | null
+  reason: string
 }
 
 export interface SearchHit {
@@ -924,6 +937,7 @@ export type ChatMessage = { seq: number; ts: string } & (
   | { type: 'gate'; gate: Gate; names?: Record<string, string> }
   | { type: 'trader_start'; agent: string; title: string }
   | { type: 'order'; order: Order }
+  | { type: 'risk_limits'; by: string; reason: string; changes: { what: string; before: number | null; after: number | null }[] }
   | { type: 'decision'; agent?: string; title?: string; decision: Decision; order_ids?: number[] }
   | { type: 'end'; status: 'succeeded' | 'failed' | 'cancelled'; message: string }
 )

@@ -35,7 +35,7 @@ def test_policy_clean_parse_and_save(conn):
     assert policy.save(conn, {"target_return": 12}, by="x")["diff"] == []
     text = policy.text(policy.get(conn))
     assert "목표 수익률: 12% (1년)" in text and "투자 기간: 장기" in text
-    assert policy.missing(policy.get(conn)) == ["objective", "benchmark", "turnover", "risk", "max_drawdown", "equity_target"]
+    assert policy.missing(policy.get(conn)) == ["objective", "benchmark", "turnover", "risk", "max_drawdown"]  # 주식 비중 목표는 100% 고정
 
 
 # ---- 자문 상담 ----
@@ -139,7 +139,7 @@ def test_advice_llm_path_and_secretary_adjusts_meetings(client, broker, at_open,
     assert cancel["ok"] and not bad_up["ok"]
     assert "자문 상담 결과 (운용 목표에 반영하고 회의·안건을 맞추세요):" in sec.prompts[-1] and "- 목표 수익률(target_return): 12% (1년)" in sec.prompts[-1]
     p = policy.get(c)
-    assert (p["target_return"], p["equity_target"], p["turnover"]) == (12, 70, "low") and p["updated_by"] == "assistant"
+    assert (p["target_return"], p["equity_target"], p["turnover"]) == (12, 100, "low") and p["updated_by"] == "assistant"
     texts = [m["text"] for m in thread(client)]
     assert "설정 변경 · 운용 목표 매매 빈도: 없음 → 가끔" in texts and texts[-1] == "운용 목표를 반영하고 12:00 회의를 잡았어요"
     entries = {e["time"]: e for e in autopilot.status(c)["today"]["entries"]}
@@ -199,7 +199,7 @@ def test_report_checks_goal_and_benchmark(client, broker, at_open):
     g = snap["policy"]
     assert g["benchmark"]["symbol"] == "KOSPI" and g["benchmark"]["change"] is not None
     assert g["benchmark"]["excess"] == round(snap["performance"]["baseline"]["return_rate"] - g["benchmark"]["change"], 4)
-    assert g["equity"]["target"] == 70 and g["return"]["target_so_far"] == round(0.10 * g["return"]["days"] / 365, 4)
+    assert g["equity"]["target"] == 100 and g["return"]["target_so_far"] == round(0.10 * g["return"]["days"] / 365, 4)
     text = briefing.to_text(snap)
     assert "[운용 목표]" not in text and "목표 대비: 주식 비중" in text and "코스피" in text     # 목표 항목은 빼고 목표 대비만
     view = client.get("/api/invest/policy").json()

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useLoad } from '../../shared/useLoad'
-import { investApi, type InvestConfig, type KeyStatus, type Limits } from './api'
+import { investApi, type InvestConfig, type KeyStatus, type Limits, type RiskLimits } from './api'
 import { digits, grouped, won } from './format'
 
 /** 설정 > 투자: 토스증권 API 키(.env), 연결 테스트·계좌 선택, 주문 조건(PIN), 전체 중지, 주문 한도. 주문은 언제나 실계좌. */
@@ -167,6 +167,19 @@ function TradingCard({ cfg, run }: { cfg: InvestConfig; run: Run }) {
   )
 }
 
+/** 에이전트가 정한 비중 한도 (읽기 전용) — 주식 비중은 100% 고정 */
+function RiskLimitsView({ r }: { r: RiskLimits }) {
+  const sectors = Object.entries(r.sectors)
+  return (
+    <div className="muted small" style={{ marginTop: 12 }}>
+      <strong>에이전트가 정한 비중 한도</strong> — 주식 비중 {r.equity_target_pct}% 고정(예수금 · 채권에 두지 않음)
+      <div>종목당 {r.max_position_pct}% ({r.position_set_by}) · 섹터 기본 {r.default_sector_pct}%
+        {sectors.length > 0 && ` · ${sectors.map(([k, v]) => `${k} ${v}%`).join(', ')}`}</div>
+      {r.updated_by && <div>마지막 조정 {r.updated_at} · {r.updated_by}{r.reason ? ` — ${r.reason}` : ''}</div>}
+    </div>
+  )
+}
+
 function LimitsCard({ cfg, run }: { cfg: InvestConfig; run: Run }) {
   const [limits, setLimits] = useState<Limits>(cfg.limits)
   const field = (key: keyof Limits, label: string, suffix: string) => (
@@ -186,11 +199,12 @@ function LimitsCard({ cfg, run }: { cfg: InvestConfig; run: Run }) {
       <div className="grid">
         {field('max_order_krw', '건당 최대 금액', `원 (${won(limits.max_order_krw)})`)}
         {field('daily_max_krw', '하루 최대 금액', `원 (${won(limits.daily_max_krw)})`)}
-        {field('max_position_pct', '종목당 최대 비중', '% (매수 후 기준)')}
+        {field('max_position_pct', '종목당 최대 비중', '% (에이전트가 정하기 전 기본값)')}
       </div>
       <div className="form-actions">
         <button className="primary" onClick={() => run(() => investApi.saveTrading({ limits }), '한도를 저장했어요')}>저장</button>
       </div>
+      {cfg.risk_limits && <RiskLimitsView r={cfg.risk_limits} />}
     </article>
   )
 }
