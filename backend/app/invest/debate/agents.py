@@ -17,8 +17,9 @@
    보유 종목: 후보에 가진 종목이 있으면 코드가 꺼낸 매도 점검(exits.py — 평단·손익·비중·지표·신호)이 그 종목 줄 아래에 붙고, 분석 에이전트는
    보유 종목마다 매도 타이밍을 따진다(EXIT_RULES — 지금 팔지·일부만 팔지, 들고 가면 언제 팔지).
 4) 실행 (aligned 종목이 있을 때만): 트레이더(유일하게 place_order 도구를 가진 에이전트)가 계좌·한도·호가를 확인하고
-   열린 종목을 그 방향으로 주문하거나(수량은 스스로 정함) 행동하지 않는다. place_order 도구가 게이트와 다른 종목·방향,
-   같은 종목 두 번째 주문, 세션당 최대 건수를 거절하고, 그 뒤에 trading.place_order 가 한도·잔고·비중을 다시 검사한다.
+   열린 종목을 그 방향으로 주문하거나(수량은 스스로 정함 — 찬성한 분석 에이전트가 views 에 quantity 를 냈으면 그 최대까지) 행동하지 않는다.
+   place_order 도구가 게이트와 다른 종목·방향, 같은 종목 두 번째 주문, 세션당 최대 건수, 중복(같은 실행·종목·방향, order_guard),
+   제안 수량을 넘는 주문을 거절하고, 그 뒤에 trading.place_order 가 한도·잔고·비중을 다시 검사한다.
 
 참고: TradingAgents (Xiao et al., arXiv 2412.20138) — 역할 분담 애널리스트 → 토론 → 트레이더 → 리스크 통제 구조.
 이 기능은 수익을 보장하지 않으며, 의사결정 근거를 펼쳐 보이기 위한 실험이다.
@@ -38,6 +39,7 @@ from app.invest.analysis import disclosures, exits, valuation
 from app.invest.broker import config, portfolio, trading
 from app.invest.broker.toss import TossError
 from app.invest.broker.trading import TradeError
+from app.invest.debate import order_guard
 from app.invest.marketdata import figures, indicators, market, news
 from app.invest.marketdata.market import MarketError
 from app.core import trace
@@ -94,6 +96,7 @@ class Session:
     system: str = ""                                        # 시스템 관리자가 맡은 이슈 (issues.brief) — 다시 요청하지 않게
     max_orders: int = MAX_ORDERS                            # 이 세션에서 낼 수 있는 주문 수 (상시 운용은 하루 남은 건수까지)
     holdings: dict[str, dict] = field(default_factory=dict)  # 후보 중 보유 종목의 매도 점검 (exits.checks) — 종목 → 사실·신호
+    sizes: dict[str, dict | None] = field(default_factory=dict)  # 종목 → 찬성 에이전트가 제안한 수량 (order_guard.proposals) — 주문 상한
 
     @property
     def candidates(self) -> list[dict]:
@@ -365,7 +368,9 @@ def _handlers(s: Session, agent_key: str = "") -> dict[str, Callable[[dict], Awa
                                "quantity": x["quantity"], "avg_price": _r(x["avg_price"]), "last_price": x["last_price"],
                                "value_krw": round(x["value_krw"]), "weight": _r(x["weight"], 4),
                                "pnl_rate": _r(x["pnl_rate"], 4)} for x in top],
-                "positions_total": len(o["positions"])}
+                "positions_total": len(o["positions"]),
+                "today_orders": order_guard.today_orders(s.conn),  # 보유가 늘어난 이유 — 오늘 낸 주문(실행 · 시각 · 수량 · 상태)
+                "today_orders_note": "오늘 낸 주문은 이미 positions 의 수량에 들어 있어요(앞 대화 · 회의의 주문이지 중복이 아님)"}
 
     async def get_trading_limits(_: dict) -> dict:
         acct = trading.account(s.conn, market=p)
@@ -375,7 +380,10 @@ def _handlers(s: Session, agent_key: str = "") -> dict[str, Callable[[dict], Awa
         return {"halted": config.halted(s.conn), **lim, "position_limit_basis": "평가액 × |레버리지 배수| (일반 종목은 평가액)",
                 "used_today_krw": round(trading._today_amount(s.conn)),
                 "buying_power": round(acct.buying_power()), "sellable_quantity": sellable,
-                "orders_this_session": len(s.orders), "max_orders_per_session": MAX_ORDERS,
+                "orders_this_session": len(s.orders), "max_orders_this_session": s.max_orders,
+                "orders_left_this_session": max(0, s.max_orders - len(s.orders)), **order_guard.day_status(s.conn),
+                "order_count_note": "세션 건수는 이번 회의 · 대화에서 낼 수 있는 수, agent_orders_*_today 는 오늘 하루 에이전트 주문(상시 운용의 하루 한도)",
+                "today_orders": order_guard.today_orders(s.conn, s.symbols),
                 "agent_order_needs_approval": not (s.auto_submit or config.agent_auto_approve(s.conn))}
 
     def _risk_view() -> dict:
@@ -439,6 +447,11 @@ def _handlers(s: Session, agent_key: str = "") -> dict[str, Callable[[dict], Awa
             price = float(a["price"]) if a.get("price") not in (None, "") else None
         except (TypeError, ValueError):
             return {"ok": False, "error": "수량·가격 형식이 올바르지 않습니다"}
+        why = order_guard.duplicate(s.conn, s.run_id, sym, side) or order_guard.size_error(qty, s.sizes.get(sym), s.name_of(sym))
+        if why:  # 코드가 막은 중복 · 토론보다 큰 수량 — 시도 횟수로 세지 않는다
+            s.order_attempts[sym] -= 1
+            s.order_errors[sym] = why
+            return {"ok": False, "error": why}
         try:
             order = trading.place_order(s.conn, symbol=sym, side=side, order_type=str(a.get("order_type") or "market"),
                                         quantity=qty, price=price, source="agent", run_id=s.run_id,
@@ -689,7 +702,8 @@ def reset_roster(conn: sqlite3.Connection) -> list[dict]:
 _CONF = {"type": "number", "minimum": 0, "maximum": 1}
 _STANCE = {"type": "string", "enum": list(STANCES)}
 _VIEW = {"type": "object", "properties": {
-    "symbol": {"type": "string"}, "stance": _STANCE, "confidence": _CONF, "reason": {"type": "string"}},
+    "symbol": {"type": "string"}, "stance": _STANCE, "confidence": _CONF, "reason": {"type": "string"},
+    "quantity": {"type": "integer", "minimum": 0}},  # 제안 수량(주) — 선택, 트레이더의 상한이 된다
     "required": ["symbol", "stance", "confidence", "reason"]}
 OPINION_SCHEMA = {
     "type": "object",
@@ -734,6 +748,8 @@ COMMON_RULES = f"""공통 규칙:
 - 후보가 여러 개면 도구에 symbol 을 넣어 조회하고, views 에 모든 후보의 입장을 하나씩 내세요. 근거가 약한 후보는 none 으로.
 - 근거가 약하거나 자료가 부족하면 stance 를 none(의견 없음)으로 하고 confidence 를 낮추세요.
 - 보유하지 않은 종목(후보 줄에 '보유 N주'가 없음)은 팔 수 없습니다 — 그 종목의 sell 은 '사지 말자'로만 읽히고 매도 안건이 되지 않습니다.
+- 매수·매도에 수량 생각이 있으면 views 의 quantity 에 몇 주인지 쓰세요(한도·현금·비중 안에서). 트레이더는 찬성한 사람이 낸 가장 큰 수량까지만
+  주문합니다. 수량 생각이 없으면 비워 두세요(그러면 트레이더가 한도·현금 안에서 정합니다).
 - 도구 결과의 data_source 가 '샘플 데이터'면 실제 시장이 아니라는 점을 알고 판단하세요.
 - {ADMIN}(사용자)가 채팅으로 남긴 의견이 있으면 진지하게 검토하고 responses 에 to="{ADMIN}"로 답하세요. 그 의견도 도구로 확인하고,
   근거가 없으면 정중히 반대할 수 있습니다.
@@ -810,7 +826,7 @@ def _statement_text(s: Session, st: dict) -> str:
         if v.get("implicit"):
             continue
         lines.append(f"  · {s.name_of(v['symbol'])}({v['symbol']}): {STANCE_KO[v['stance']]} (확신 {v['confidence']:.2f})"
-                     + (f" — {v['reason']}" if v.get("reason") else ""))
+                     + (f" · 제안 {v['quantity']}주" if v.get("quantity") else "") + (f" — {v['reason']}" if v.get("reason") else ""))
     lines += [f"  · 근거: {e['fact']} ({e['tool']})" for e in st.get("evidence", [])[:4]]
     if st.get("risks"):
         lines.append(f"  · 위험: {'; '.join(st['risks'][:3])}")
@@ -859,14 +875,17 @@ def trader_prompt(s: Session, transcript: list[dict], gate: dict, needs_approval
                  + (" · 당신의 주문은 관리자(사용자) 승인 후 제출됩니다" if needs_approval else " · 승인 없이 바로 제출됩니다"))
     opened = "\n".join(f"- {s.name_of(x['symbol'])} ({x['symbol']}): {STANCE_KO[x['direction']]} 방향만 가능"
                        + (f" — {gate['symbols'][x['symbol']]['reason']}" if x["symbol"] in gate.get("symbols", {}) else "")
+                       + f" · {order_guard.proposals_text(s.sizes.get(x['symbol']))}"
                        for x in gate["aligned"])
     closed = [f"{s.name_of(sym)} {g['status']}" for sym, g in gate["symbols"].items() if g["status"] != "aligned"]
     return (f"토론 범위: {s.label} · {mode_line}\n" + _goal_text(s) + _notes_text(s)
             + f"게이트가 열린 종목 ({GATE_RULE[s.gate_mode]}):\n{opened}\n"
             + (f"닫힌 종목(주문 불가): {', '.join(closed)}\n" if closed else "")
+            + order_guard.orders_text(s.conn, s.symbols)
             + f"\n최종 라운드 의견:\n" + "\n\n".join(_statement_text(s, t) for t in finals)
             + "\n\n할 일: get_portfolio·get_trading_limits·get_quote·get_orderbook 으로 계좌·한도·호가를 확인하고, 열린 종목마다 "
-              "그 방향으로 주문할지 행동하지 않을지(hold) 정하세요. 주문한다면 한도와 비중 안에서 수량을 정하고 place_order 를 종목당 한 번 "
+              "그 방향으로 주문할지 행동하지 않을지(hold) 정하세요. 주문한다면 한도와 비중 안에서 수량을 정하고(찬성한 에이전트의 제안 수량이 "
+              "있으면 그 최대까지 — 넘으면 시스템이 거절) place_order 를 종목당 한 번 "
               f"호출하세요(symbol 필수, 세션당 최대 {MAX_ORDERS}건, 닫힌 종목·반대 방향은 시스템이 거절). 거절되면 사유를 보고 한 번만 "
               "수량을 줄여 다시 시도할 수 있습니다. " + (SELL_SIZING + " " if any(x["direction"] == "sell" for x in gate["aligned"]) else "")
             + "마지막에 decisions(종목별 buy|sell|hold·quantity)·rationale 을 JSON 으로 답하세요. "
@@ -981,6 +1000,15 @@ def _conf(v: object) -> float:
         return 0.0
 
 
+def _qty(v: object) -> int | None:
+    """제안 수량 — 1주 이상 정수만, 아니면 None(수량 의견 없음)."""
+    try:
+        q = int(v)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    return q if q > 0 else None
+
+
 def _strs(v: object, n: int = 6) -> list[str]:
     return [str(x).strip() for x in v or [] if str(x).strip()][:n] if isinstance(v, list) else []
 
@@ -998,7 +1026,8 @@ def normalize_statement(raw: dict, agent: dict, rnd: int, prev: dict | None, sym
         v = given.get(sym)
         views.append({"symbol": sym, "stance": v.get("stance") if v and v.get("stance") in STANCES else "none",
                       "confidence": _conf(v.get("confidence")) if v else 0.0,
-                      "reason": str((v or {}).get("reason") or "").strip(), "implicit": v is None})
+                      "reason": str((v or {}).get("reason") or "").strip(), "implicit": v is None,
+                      "quantity": _qty((v or {}).get("quantity"))})
     prev_views = {v["symbol"]: v["stance"] for v in prev["views"]} if prev and not prev.get("error") else {}
     changed = [v["symbol"] for v in views if v["symbol"] in prev_views and prev_views[v["symbol"]] != v["stance"]]
     explicit = [v for v in views if not v["implicit"]] or views
@@ -1101,6 +1130,8 @@ async def run_session(s: Session, roster: list[dict], *, rounds: int = 2, model:
     if check_cancel:
         check_cancel()
     needs_approval = not (s.auto_submit or config.agent_auto_approve(s.conn))
+    s.sizes = {x["symbol"]: order_guard.proposals([(st["title"], _view(st, x["symbol"])) for st in prev if not st.get("error")], x["direction"])
+               for x in gate["aligned"]}
     s.emit({"type": "trader_start", "agent": executor["key"], "title": executor["title"]})
     try:
         with as_agent(executor["key"]):

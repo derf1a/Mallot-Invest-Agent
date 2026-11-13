@@ -18,7 +18,7 @@ core  ←  llm  ←  runs  ←  invest (broker · marketdata · analysis  ←  d
 | `app/invest/broker` | 토스증권 Open API(`toss.py`), 주문 한도 · PIN · 에이전트가 정하는 비중 한도(종목당 · 섹터별, `config.risk_limits`, 주식 비중 100% 고정)(`config.py`), **모든 주문이 지나는** `trading.place_order`, 내 투자현황(`portfolio.py`) |
 | `app/invest/marketdata` | 시세 제공자(토스 / 샘플), 기술 지표, 뉴스 RSS(종목은 주가 + 실적 · 수주 · 계약 · 공시 검색어), 유명인 발언 · 소문(`figures.py`), 관심 그룹 |
 | `app/invest/analysis` | 코드가 계산하는 판단 재료 — OpenDART 재무 · 가치평가, 공시 재료(`disclosures.py`: 분류 · 희석 · 자사주 · 풍문), 시장 스캔 점수, 판단 기록, 보유 종목 매도 점검, 운용 목표 |
-| `app/invest/debate` | 토론 엔진(`agents.py`: 명단 · 도구 · 라운드 · 게이트 · 트레이더), 상시 운용 채널(`stream.py`), 의견 가중치(`track.py`), 회의록, 토론 범위 |
+| `app/invest/debate` | 토론 엔진(`agents.py`: 명단 · 도구 · 라운드 · 게이트 · 트레이더), 상시 운용 채널(`stream.py`), 의견 가중치(`track.py`), 주문 장부(`order_guard.py`: 오늘 낸 주문 · 중복 거절 · 제안 수량 상한 · 하루 자동 주문 건수), 회의록, 토론 범위 |
 | `app/invest/ops` | 자동 운용 일정(`autopilot.py`), 운용 데스크(`desk.py` · `desk_agents.py`, 데스크 설정 `invest_desk_config`), 아침 브리핑 · 장 마감 보고(`morning.py`) · 보고서, 뉴스 리포트 |
 | `app/invest/advice` | 투자 비서(`assistant.py`), 자문 에이전트(`advisor.py`) |
 | `app/invest/api*.py` · `jobs/` · `service.py` | 라우터 · 작업(agent_action · desk_research · news_report) · 20초마다 일정 확인 스레드 |
