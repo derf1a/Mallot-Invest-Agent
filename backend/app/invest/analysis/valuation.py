@@ -24,7 +24,7 @@ import re
 import sqlite3
 import statistics
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime
 
@@ -404,8 +404,31 @@ def brief(v: dict | None) -> dict | None:
 
 
 # ---- 시장 전체 ----
+def primary_sectors(lists: Iterable[tuple[str, list[dict]]]) -> dict[str, dict]:
+    """(대분류 섹터 이름, 구성 주식 — 시가총액순) → {종목: {sector, sectors, name, market_cap, trading_amount}}.
+    한 종목이 여러 대분류에 들면(삼성에스디에스: IT·운송) 그 섹터 안에서 시가총액 순위가 상대적으로 가장 앞인 곳을 대표 섹터로 —
+    (순위 + 1) / (구성 수 + 1) 이 가장 작은 곳. 큰 섹터에서 앞자리일수록 그 업종을 대표한다고 본다. sectors 는 대표 섹터부터 모두."""
+    seen: dict[str, list[tuple[float, int, str]]] = {}
+    first: dict[str, dict] = {}
+    for order, (name, rows) in enumerate(lists):
+        for rank, r in enumerate(rows):
+            sym = r.get("symbol")
+            if not sym:
+                continue
+            seen.setdefault(sym, []).append(((rank + 1) / (len(rows) + 1), order, name))
+            first.setdefault(sym, r)
+    out: dict[str, dict] = {}
+    for sym, hits in seen.items():
+        names = list(dict.fromkeys(n for _, _, n in sorted(hits)))
+        r = first[sym]
+        out[sym] = {"sector": names[0], "sectors": names, "name": r.get("name") or "", "market_cap": r.get("market_cap"),
+                    "trading_amount": r.get("trading_amount")}
+    return out
+
+
 def sector_index(p, notes: list[str] | None = None) -> dict[str, dict]:
-    """대분류 섹터의 구성 주식 → {종목: {sector, name, market_cap, trading_amount}} (6시간 캐시, 토스 섹터 API 39번). 섹터 쏠림·업종 비교·가치 스크린이 쓴다."""
+    """대분류 섹터의 구성 주식 → {종목: {sector, sectors, name, market_cap, trading_amount}} (6시간 캐시, 토스 섹터 API 39번).
+    sector 는 대표 섹터 하나(primary_sectors), sectors 는 그 종목이 든 대분류 모두. 섹터 쏠림·업종 비교·가치 스크린이 쓴다."""
     def load() -> dict[str, dict]:
         tops = [s for s in p.sectors() if (s.get("depth") or 0) == 0]
 
@@ -417,12 +440,7 @@ def sector_index(p, notes: list[str] | None = None) -> dict[str, dict]:
 
         with ThreadPoolExecutor(WORKERS) as ex:
             lists = list(ex.map(stocks, tops))
-        out: dict[str, dict] = {}
-        for sec, rows in zip(tops, lists):
-            for r in rows:
-                out.setdefault(r["symbol"], {"sector": sec["name"], "name": r.get("name") or "", "market_cap": r.get("market_cap"),
-                                             "trading_amount": r.get("trading_amount")})
-        return out
+        return primary_sectors(zip((sec["name"] for sec in tops), lists))
 
     try:
         return market.cached(("sector_index", p.key), INDEX_TTL, load)

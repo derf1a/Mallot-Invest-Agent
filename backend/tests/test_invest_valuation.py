@@ -447,3 +447,15 @@ def test_value_investor_tool_answers_without_crashing(conn):  # noqa: F811
                        provider=SampleMarket())
     out = asyncio.run(agents._handlers(s)["get_valuation"]({}))
     assert out["available"] is False and "OpenDART" in out["data_source"]
+
+
+def test_primary_sector_prefers_where_stock_leads_relative_to_size():
+    """여러 대분류에 든 종목은 먼저 나온 섹터가 아니라 (순위 + 1) / (구성 수 + 1) 이 가장 작은 섹터 — 삼성에스디에스는 운송이 아니라 IT."""
+    filler = lambda n, tag: [{"symbol": f"{tag}{i:04d}"} for i in range(n)]  # noqa: E731
+    sds = {"symbol": "018260", "name": "삼성에스디에스", "market_cap": 1e13, "trading_amount": 1e9}
+    lists = [("운송", filler(2, "a") + [sds] + filler(63, "b")), ("IT", filler(3, "c") + [sds] + filler(202, "d")),
+             ("반도체", [{"symbol": "005930"}] + filler(206, "e")), ("스마트폰", [{"symbol": "005930"}] + filler(91, "f"))]
+    idx = valuation.primary_sectors(lists)
+    assert idx["018260"] == {"sector": "IT", "sectors": ["IT", "운송"], "name": "삼성에스디에스", "market_cap": 1e13, "trading_amount": 1e9}
+    assert idx["005930"]["sector"] == "반도체" and idx["005930"]["sectors"] == ["반도체", "스마트폰"]
+    assert idx["a0000"]["sectors"] == ["운송"]
