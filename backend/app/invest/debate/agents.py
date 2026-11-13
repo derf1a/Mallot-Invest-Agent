@@ -312,7 +312,7 @@ def _handlers(s: Session) -> dict[str, Callable[[dict], Awaitable[object]]]:
                 items = news.fetch(s.conn, q, None, 10)
             else:  # 종목: 주가 기사 + 실적 · 수주 · 계약 · 공시 기사
                 sym = pick(a)
-                q = " · ".join(news.symbol_queries(s.name_of(sym)))
+                q = " · ".join(news.symbol_queries(s.name_of(sym), sym))
                 items = news.fetch_symbol(s.conn, sym, s.name_of(sym), 12)
         except news.NewsError as e:
             return {"error": str(e), "items": []}
