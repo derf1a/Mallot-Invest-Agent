@@ -4,6 +4,8 @@
 
 1) 재무(refresh): 장 전 리서치 때 하루 한 번 — 고유번호(일주일에 한 번)·다중회사 주요계정을 보고서 단위로 invest_fundamentals 에 쌓는다.
    이미 있는 보고서는 다시 묻지 않는다. 시간 예산(SYNC_BUDGET_SEC)을 넘기면 멈추고 다음 리서치 때 이어서.
+   주요계정에 매출이 빠진 회사('영업수익' 등 표준계정 미사용)는 전체 재무제표(fill_revenue)로 한 번 채운다. 매출은 절댓값으로 읽는다.
+   아직 동기화되지 않은 종목은 report 가 그 자리에서 받는다(fetch_symbol, 종목마다 하루 한 번).
 2) 최근 12개월(financials): 사업보고서 + (이번 해 누적 − 지난해 같은 기간 누적). 재무상태는 가장 최근 보고서, 성장률은 같은 기간끼리.
 3) 평가(assess): 항목마다 BANDS 구간으로 0~100 → 항목 평균이 기둥(저평가·수익성·성장·안정성) → PILLARS 가중 평균이 가치 점수.
    PER·PBR 은 절대 구간과 같은 대분류 섹터의 중앙값 대비(peer)를 함께 본다 — 은행이 늘 싸 보이고 바이오가 늘 비싸 보이는 쏠림을 줄인다.
@@ -53,6 +55,12 @@ FINANCIAL_SECTORS = {"금융", "지주사", "리츠"}  # 영업이익률·부채
 FINANCIAL_SKIP = {"op_margin", "debt_ratio", "current_ratio", "rev_growth", "op_growth"}
 ACCOUNT_KEYS = {"매출액": "revenue", "영업이익": "op_income", "당기순이익": "net_income", "자산총계": "assets", "부채총계": "liabilities",
                 "자본총계": "equity", "유동자산": "current_assets", "유동부채": "current_liabilities"}
+# 매출을 다른 이름으로 내는 회사 — '매출액' 줄이 없을 때만 쓴다 ('수익(매출액)' 은 괄호를 지워 '수익')
+ACCOUNT_ALIASES = {"영업수익": "revenue", "수익": "revenue", "매출": "revenue", "분기순이익": "net_income", "반기순이익": "net_income"}
+# 전체 재무제표에서 매출 줄을 찾는 기준 — 표준계정 id 먼저, 없으면 이름
+REVENUE_IDS = ("ifrs-full_Revenue", "ifrs_Revenue")
+REVENUE_NAMES = ("매출액", "영업수익", "수익", "매출")
+FILL_PER_RUN = 60             # 동기화 한 번에 전체 재무제표로 매출을 채우는 보고서 수 (회사마다 한 번 묻는다)
 FLOWS = ("revenue", "op_income", "net_income")
 INTERIM_ORDER = ("11014", "11012", "11013")   # 최근 보고서부터
 # 보고서를 찾기 시작하는 날짜 — 법정 기한보다 앞서 내는 회사가 있어 넉넉히 당겼다 (월, 일)
@@ -106,9 +114,13 @@ def rules() -> dict:
 
 
 # ---- 재무 받기 ----
+def _norm(name: object) -> str:
+    return re.sub(r"\s|\(.*?\)", "", str(name or ""))
+
+
 def _account(name: object) -> str | None:
-    text = re.sub(r"\s|\(.*?\)", "", str(name or ""))
-    return ACCOUNT_KEYS.get(text)
+    text = _norm(name)
+    return ACCOUNT_KEYS.get(text) or ACCOUNT_ALIASES.get(text)
 
 
 def _amount(value: object) -> float | None:
@@ -121,6 +133,21 @@ def _amount(value: object) -> float | None:
         return None
 
 
+def _cells(r: dict) -> dict:
+    return {"cur": _amount(r.get("thstrm_amount")), "cur_add": _amount(r.get("thstrm_add_amount")),
+            "prev": _amount(r.get("frmtrm_amount")), "prev_add": _amount(r.get("frmtrm_add_amount")),
+            "prev2": _amount(r.get("bfefrmtrm_amount"))}
+
+
+def _unsigned_revenue(accounts: dict) -> dict:
+    """매출은 음수일 수 없다 — 부호를 거꾸로 공시한 회사가 있어(예: 참좋은여행 2026 3분기 영업수익 -589억) 절댓값으로 읽는다.
+    부호가 섞이면 최근 12개월(사업보고서 + 올해 누적 − 지난해 누적)이 크게 틀어진다."""
+    rev = accounts.get("revenue")
+    if rev:
+        accounts["revenue"] = {k: abs(v) if isinstance(v, float) else v for k, v in rev.items()}
+    return accounts
+
+
 def parse_rows(rows: list[dict]) -> dict[str, dict]:
     """주요계정 응답 → {종목: 보고서 하나} — 연결(CFS)이 있으면 연결, 없으면 별도."""
     grouped: dict[tuple[str, str], dict] = {}
@@ -129,13 +156,14 @@ def parse_rows(rows: list[dict]) -> dict[str, dict]:
         key = _account(r.get("account_nm"))
         if len(symbol) != 6 or fs not in ("CFS", "OFS") or key is None:
             continue
+        alias = _norm(r.get("account_nm")) in ACCOUNT_ALIASES
         rep = grouped.setdefault((symbol, fs), {
             "bsns_year": int(r.get("bsns_year") or 0), "reprt_code": str(r.get("reprt_code") or ""), "fs_div": fs,
             "currency": str(r.get("currency") or "KRW"), "rcept_no": str(r.get("rcept_no") or ""),
             "period_end": str(r.get("thstrm_dt") or ""), "accounts": {}})
-        rep["accounts"][key] = {"cur": _amount(r.get("thstrm_amount")), "cur_add": _amount(r.get("thstrm_add_amount")),
-                                "prev": _amount(r.get("frmtrm_amount")), "prev_add": _amount(r.get("frmtrm_add_amount")),
-                                "prev2": _amount(r.get("bfefrmtrm_amount"))}
+        if alias and key in rep["accounts"]:
+            continue  # 본래 이름('매출액')이 이미 있으면 그것을 쓴다
+        rep["accounts"][key] = _cells(r)
     out: dict[str, dict] = {}
     for (symbol, fs), rep in grouped.items():
         if fs == "CFS" or symbol not in out:
@@ -230,6 +258,16 @@ def refresh(conn: sqlite3.Connection, symbols: set[str] | None = None, *, now: d
                         saved += 1
                 conn.commit()
                 sleep(PAUSE_SEC)
+        # 주요계정에 매출이 빠진 회사는 전체 재무제표로 채운다 (회사마다 한 번 — 빈 줄을 남겨 다시 묻지 않는다)
+        filled = 0
+        for symbol, reps in load_reports(conn, list(corps)).items():
+            if filled >= FILL_PER_RUN or time.monotonic() - started > SYNC_BUDGET_SEC:
+                break
+            if _needs_revenue(reps):
+                tick()
+                n = fill_revenue(conn, symbol, corps[symbol], reps)
+                calls += n
+                filled += n
     except StopIteration:
         pass
     except DartError as e:
@@ -241,6 +279,85 @@ def refresh(conn: sqlite3.Connection, symbols: set[str] | None = None, *, now: d
     _put_state(conn, st)
     say(f"OpenDART 재무: {calls}번 물어 보고서 {saved}건 저장" + (f" · {reason}" if reason else ""))
     return {"ok": done, "saved": saved, "calls": calls, "done": done, "reason": reason}
+
+
+def revenue_row(rows: list[dict]) -> dict | None:
+    """전체 재무제표 줄들 → 매출 줄 (손익계산서 · 포괄손익계산서에서, 표준계정 id 먼저, 없으면 이름)."""
+    income = sorted((r for r in rows if r.get("sj_div") in ("IS", "CIS")),
+                    key=lambda r: int(r["ord"]) if str(r.get("ord") or "").isdigit() else 9999)
+    by_id = next((r for r in income if r.get("account_id") in REVENUE_IDS), None)
+    return by_id or next((r for r in income if _norm(r.get("account_nm")) in REVENUE_NAMES), None)
+
+
+def _needs_revenue(reports: list[dict]) -> list[dict]:
+    """financials 가 쓰는 보고서(최근 사업보고서 + 다음 해 최근 분기) 중 매출 줄이 아예 없는 것."""
+    annual = [r for r in reports if r["reprt_code"] == "11011" and r["currency"] == "KRW"]
+    if not annual:
+        return []
+    a = max(annual, key=lambda r: r["bsns_year"])
+    interims = [r for r in reports if r["bsns_year"] == a["bsns_year"] + 1 and r["reprt_code"] in INTERIM_ORDER and r["currency"] == "KRW"]
+    use = [a] + ([min(interims, key=lambda r: INTERIM_ORDER.index(r["reprt_code"]))] if interims else [])
+    return [r for r in use if "revenue" not in r["accounts"]]
+
+
+def fill_revenue(conn: sqlite3.Connection, symbol: str, corp_code: str, reports: list[dict]) -> int:
+    """주요계정에 매출이 빠진 보고서를 전체 재무제표로 채운다 → 물은 횟수. 찾지 못해도 빈 줄(source=full)을 남겨 다시 묻지 않는다."""
+    calls = 0
+    for r in _needs_revenue(reports):
+        hit = revenue_row(dart.full_accounts(corp_code, r["bsns_year"], r["reprt_code"], r["fs_div"]))
+        calls += 1
+        cells = _cells(hit) if hit else dict.fromkeys(("cur", "cur_add", "prev", "prev_add", "prev2"))
+        r["accounts"]["revenue"] = {**cells, "source": "full", "account_nm": (hit or {}).get("account_nm")}
+        conn.execute("UPDATE invest_fundamentals SET accounts = ? WHERE symbol = ? AND bsns_year = ? AND reprt_code = ?",
+                     (json.dumps(r["accounts"], ensure_ascii=False), symbol, r["bsns_year"], r["reprt_code"]))
+        conn.commit()
+        sleep(PAUSE_SEC)
+    return calls
+
+
+def _corp_code(conn: sqlite3.Connection, symbol: str) -> str | None:
+    row = conn.execute("SELECT corp_code FROM invest_dart_corps WHERE symbol = ?", (symbol,)).fetchone()
+    return row["corp_code"] if row else None
+
+
+def fetch_symbol(conn: sqlite3.Connection, symbol: str, *, now: datetime | None = None) -> str:
+    """한 종목 재무를 지금 받는다 — 아직 동기화되지 않았거나 매출이 빠진 종목. 못 받은 이유를 돌려준다('' 이면 받음).
+    같은 종목은 하루 한 번만 묻는다 (OpenDART 하루 요청 한도 보호)."""
+    if not dart.configured():
+        return dart.NOT_CONFIGURED
+    now = now or market.now_kst()
+    today = now.date().isoformat()
+    st = state(conn)
+    tried = {k: v for k, v in (st.get("on_demand") or {}).items() if isinstance(v, dict) and v.get("day") == today}
+    if symbol in tried:
+        return tried[symbol].get("reason") or ""  # 오늘 이미 물어봤다 — 같은 이유를 다시
+    reason = ""
+    try:
+        _sync_corps(conn, st, now)
+        corp = _corp_code(conn, symbol)
+        if not corp:
+            reason = "OpenDART 상장사 목록에 없는 종목이에요 (ETF·ETN·리츠 일부·우선주·외국 기업 등)"
+        else:
+            stamp = now.strftime("%Y-%m-%d %H:%M:%S")
+            have = {(r["bsns_year"], r["reprt_code"]) for r in conn.execute(
+                "SELECT bsns_year, reprt_code FROM invest_fundamentals WHERE symbol = ?", (symbol,))}
+            for year, code in reports_due(now.date()):
+                if (year, code) in have:
+                    continue
+                got = parse_rows(dart.multi_accounts([corp], year, code)).get(symbol)
+                if got:
+                    _save_report(conn, symbol, got, stamp)
+                    conn.commit()
+                sleep(PAUSE_SEC)
+            fill_revenue(conn, symbol, corp, load_reports(conn, [symbol]).get(symbol) or [])
+            if not load_reports(conn, [symbol]):
+                reason = "OpenDART 에 이 종목의 정기보고서 재무가 없어요 (신규 상장·미공시 등)"
+    except DartError as e:
+        reason = f"OpenDART 재무를 받지 못했어요: {e}"
+    tried[symbol] = {"day": today, "reason": reason}
+    st["on_demand"] = tried
+    _put_state(conn, st)
+    return reason
 
 
 def status(conn: sqlite3.Connection) -> dict:
@@ -260,7 +377,7 @@ def load_reports(conn: sqlite3.Connection, symbols: list[str] | None = None) -> 
         args = tuple(symbols)
     out: dict[str, list[dict]] = {}
     for r in conn.execute(sql, args):
-        out.setdefault(r["symbol"], []).append({**dict(r), "accounts": json.loads(r["accounts"])})
+        out.setdefault(r["symbol"], []).append({**dict(r), "accounts": _unsigned_revenue(json.loads(r["accounts"]))})
     return out
 
 
@@ -530,9 +647,20 @@ def report(conn: sqlite3.Connection, p, symbol: str) -> dict:
     """한 종목의 가치평가 + 재료 — 에이전트 도구·화면. 재무가 없으면 이유와 재료만 돌려준다."""
     index = sector_index(p)
     info = index.get(symbol) or {}
+    reps = load_reports(conn, [symbol]).get(symbol) or []
+    note = ""
+    if dart.configured() and (not reps or _needs_revenue(reps)):
+        note = fetch_symbol(conn, symbol)  # 아직 동기화 안 된 종목 · 매출이 빠진 종목은 지금 받는다
     v = evaluate(conn, p, [symbol], index=index).get(symbol)
     if v is None:
-        reason = dart.NOT_CONFIGURED if not dart.configured() and not load_reports(conn, [symbol]) else "재무 자료가 없어요 (ETF·미공시·우선주 등)"
+        if not dart.configured() and not reps:
+            reason = dart.NOT_CONFIGURED
+        elif note:
+            reason = note
+        elif load_reports(conn, [symbol]):
+            reason = "원화 사업보고서(연간) 재무가 아직 없어 최근 12개월을 계산할 수 없어요"
+        else:
+            reason = "재무 자료가 없어요 (ETF·미공시·우선주 등)"
         return {"symbol": symbol, "available": False, "reason": reason, "events": events(conn, p, symbol, info.get("name") or "", None)}
     ind = v["indicators"]
     ev = events(conn, p, symbol, info.get("name") or "", ind.get("market_cap"))

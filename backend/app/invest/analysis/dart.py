@@ -6,6 +6,8 @@
 - 고유번호 /corpCode.xml: 정상이면 ZIP(안에 XML 하나 — list: corp_code·corp_name·stock_code·modify_date), 오류면 XML. 상장사만 stock_code.
 - 다중회사 주요계정 /fnlttMultiAcnt.json: corp_code 콤마로 최대 100개, bsns_year(2015년부터), reprt_code(1분기 11013·반기 11012·
   3분기 11014·사업보고서 11011). 주요계정은 재무상태표(BS)·손익계산서(IS)이고 연결(CFS)·별도(OFS)가 같이 온다.
+- 단일회사 전체 재무제표 /fnlttSinglAcntAll.json: corp_code 하나, bsns_year, reprt_code, fs_div(CFS·OFS). 주요계정에 매출이 없는 회사
+  (예: 여행사 '영업수익' — 표준계정코드 미사용)도 손익계산서 줄이 모두 온다.
 - 오류도 HTTP 200 + status: 000 정상, 013 조회된 데이터 없음, 020 요청 제한 초과(일반적으로 2만 건), 021 회사 수 초과, 010·011·012·901 키·IP
   문제, 800 점검.
 
@@ -122,6 +124,13 @@ def multi_accounts(corps: list[str], year: int, reprt_code: str) -> list[dict]:
     _status(code, str(data.get("message") or ""))
     rows = data.get("list") if code == "000" else []
     return [r for r in rows or [] if isinstance(r, dict)]
+
+
+def full_accounts(corp_code: str, year: int, reprt_code: str, fs_div: str = "CFS") -> list[dict]:
+    """단일회사 전체 재무제표 /fnlttSinglAcntAll.json → 응답 list 그대로. 없으면(013) 빈 목록.
+    주요계정(fnlttMultiAcnt)에 매출이 빠지는 회사(표준계정을 안 쓰는 '영업수익' 등)를 채울 때 쓴다."""
+    data = _json(_get("fnlttSinglAcntAll.json", {"corp_code": corp_code, "bsns_year": year, "reprt_code": reprt_code, "fs_div": fs_div}))
+    return [r for r in data.get("list") or [] if isinstance(r, dict)]
 
 
 def _json(body: bytes) -> dict:

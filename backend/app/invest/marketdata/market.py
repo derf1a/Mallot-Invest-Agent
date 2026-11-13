@@ -31,6 +31,11 @@ UNIVERSE_TTL = timedelta(days=1)
 
 ETP_TYPES = {"ETF", "ETN", "FOREIGN_ETF"}
 REGULAR_OPEN, REGULAR_CLOSE = "09:00", "15:30"
+# 분봉 시각은 봉이 끝나는 시각이다 — 09:00:00 시가 단일가는 "09:01" 봉, 15:30 종가 단일가는 "15:31" 봉에 들어간다.
+# 그래서 정규장 봉은 09:00 초과 ~ 15:31 이하. "09:00" 봉(08:59~09:00)은 거래 없는 자리 채움 봉이라 시가로 쓰면 안 된다.
+REGULAR_FIRST_BAR, REGULAR_LAST_BAR = "09:01", "15:31"
+OPEN_BASIS = "일봉 시가 — 토스 통합 시세라 NXT 프리마켓(08:00~)이 있는 종목은 그 첫 체결가"
+REGULAR_OPEN_BASIS = "정규장(KRX 09:00 시가 단일가) 첫 체결가 — 분봉에서 구함"
 
 
 class MarketError(Exception):
@@ -57,9 +62,31 @@ def now_kst() -> datetime:
 
 def session_bars(bars: list[dict]) -> list[dict]:
     """분봉에서 가장 최근 정규장만 — 토스 분봉에는 전날과 시간외(NXT)가 섞여 있어 그대로 쓰면 시가·VWAP 이 오늘 값이 아니다."""
-    regular = [b for b in bars if REGULAR_OPEN <= b["t"][11:16] <= REGULAR_CLOSE]
+    regular = [b for b in bars if REGULAR_FIRST_BAR <= b["t"][11:16] <= REGULAR_LAST_BAR]
     day = regular[-1]["t"][:10] if regular else None
     return [b for b in regular if b["t"][:10] == day]
+
+
+def intraday_summary(minute_bars: list[dict], daily: list[dict]) -> dict:
+    """분봉 요약. 오늘 시가는 get_quote 와 같은 일봉 시가(open) 하나로 쓰고,
+    분봉에서 구한 정규장 첫 체결가는 regular_open 으로 따로 둔다 (둘이 다르면 NXT 프리마켓 때문)."""
+    ms = session_bars(minute_bars)
+    if not ms:
+        return {"bars": 0}
+    day = ms[-1]["t"][:10]
+    candle = next((c for c in reversed(daily) if c.get("t") == day), None)
+    traded = [m for m in ms if m["v"]] or ms  # 거래 없는 자리 채움 봉은 시가로 쓰지 않는다
+    vol = sum(m["v"] for m in ms) or 1
+    tail = ms[-30:]
+    return {
+        "day": day,
+        "open": candle.get("o") if candle else None, "open_basis": OPEN_BASIS,
+        "regular_open": traded[0]["o"], "regular_open_basis": REGULAR_OPEN_BASIS,
+        "regular_high": max(m["h"] for m in ms), "regular_low": min(m["l"] for m in ms),
+        "last": ms[-1]["c"], "vwap": round(sum(m["c"] * m["v"] for m in ms) / vol, 2),
+        "bars": len(ms), "from": ms[0]["t"], "to": ms[-1]["t"],
+        "last_30m_change": round(tail[-1]["c"] / tail[0]["o"] - 1, 4) if tail[0]["o"] else None,
+    }
 
 
 # ---- 짧은 캐시 (토스 호출 한도 보호) ----
@@ -611,7 +638,7 @@ def snapshot(p: SampleMarket | TossMarket, symbol: str) -> dict:
         "prev_close": prev,
         "change": (price - prev) if price is not None and prev else None,
         "change_rate": (price / prev - 1) if price and prev else None,
-        "open": today.get("o"), "high": today.get("h"), "low": today.get("l"), "volume": today.get("v"),
+        "open": today.get("o"), "open_basis": OPEN_BASIS, "high": today.get("h"), "low": today.get("l"), "volume": today.get("v"),
         "day": today.get("t"),
         "range_high": max((c["h"] for c in daily), default=None),
         "range_low": min((c["l"] for c in daily), default=None),
