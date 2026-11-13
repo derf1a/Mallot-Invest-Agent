@@ -11,6 +11,7 @@ from app.core.db import connect
 from app.invest import service
 from app.invest.broker import config
 from app.invest.debate import agents, scopes
+from app.invest.marketdata import market
 from app.invest.marketdata.market import KST, SampleMarket
 from app.invest.ops import autopilot
 from app.llm.client import LLMError
@@ -103,6 +104,17 @@ def test_scan_scope_screens_many_stocks(conn, broker):
     assert any("운용 지시에서 찾은 종목: SK하이닉스(000660)" in n for n in out["notes"])
     cut = scopes.resolve(conn, p, {"scope": "scan", "intents": []}, 2)
     assert [c["symbol"] for c in cut["candidates"]][0] == "035420" and len(cut["candidates"]) == 2 and cut["label"] == "시장 스캔"
+
+
+def test_candidates_get_name_and_type_from_master(conn):
+    """보유·발굴에서 온 후보는 이름이 코드뿐이거나 유형이 비어 있었다 — 종목 목록(invest_universe), 없으면 종목 정보로 채운다."""
+    conn.execute("INSERT INTO invest_universe (symbol, name, market, security_type) VALUES ('018260', '삼성에스디에스', 'KOSPI', 'STOCK')")
+    rows = [{"symbol": "018260", "name": "018260", "security_type": ""}, {"symbol": "005930", "name": "", "security_type": ""},
+            {"symbol": "000660", "name": "하이닉스(내 이름)", "security_type": "STOCK"}]
+    market.fill_names(conn, SampleMarket(), rows)
+    assert rows == [{"symbol": "018260", "name": "삼성에스디에스", "security_type": "STOCK"},
+                    {"symbol": "005930", "name": "삼성전자", "security_type": "STOCK"},
+                    {"symbol": "000660", "name": "하이닉스(내 이름)", "security_type": "STOCK"}]
 
 
 def test_screening_score_and_llm_pick(monkeypatch):

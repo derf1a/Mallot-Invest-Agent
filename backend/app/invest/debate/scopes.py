@@ -170,6 +170,7 @@ def resolve(conn: sqlite3.Connection, p, params: dict, max_candidates: int, pick
         out["label"] = "전체 (보유 + 관심)"
     if not cands:
         raise ScopeError("토론할 국내 종목이 없습니다")
+    market.fill_names(conn, p, cands)  # 보유·발굴에서 온 후보는 이름이 코드뿐이거나 유형이 비어 있을 수 있다 — 종목 마스터로 채운다
     for c in cands:
         if read:
             c["held"] = held.get(c["symbol"], 0.0)

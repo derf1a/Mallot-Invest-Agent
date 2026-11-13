@@ -318,8 +318,9 @@ class Stream:
         for c in self.candidates:
             c["held"] = held.get(c["symbol"], 0.0)
         known = {c["symbol"] for c in self.candidates}
-        self.candidates += [{"symbol": h["symbol"], "name": h["name"] or h["symbol"], "security_type": "", "held": h["quantity"], "why": "보유 종목"}
-                            for h in rows if h["symbol"] not in known]
+        self.candidates += market.fill_names(self.conn, self.p, [{"symbol": h["symbol"], "name": h["name"] or h["symbol"], "security_type": "",
+                                                                  "held": h["quantity"], "why": "보유 종목"}
+                                                                 for h in rows if h["symbol"] not in known])
         self.names.update({c["symbol"]: c["name"] for c in self.candidates})
         return held
 
