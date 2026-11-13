@@ -7,7 +7,8 @@
   조용하면 점검(PULSE_MIN 마다). 대화 사이는 MIN_GAP_SEC 초(관리자 말은 바로).
 - 대화 하나 = 계기 하나: 계기에 맞는 에이전트 + 오래 말하지 않은 순으로 SPEAKERS 명이, 최근 대화(RECENT 발언)·입장판·계기를 보고
   볼 종목(FOCUS 개까지 — 계기의 종목, 나머지는 오래 이야기하지 않은 순)마다 입장(views)과 동의/반박(responses)을 낸다. 채팅방 구분선은 '시각 · 계기'.
-- 보유 종목은 후보에 없어도 볼 종목에 더한다(국내만, 그래야 급변을 보고 입장이 모여 손절할 수 있다). 수량은 대화마다 지금 계좌로.
+- 보유 종목은 후보에 없어도 볼 종목에 더한다(국내만, 그래야 급변을 보고 입장이 모여 손절할 수 있다). 수량은 대화마다 지금 계좌로
+  (get_portfolio 와 같은 토스 보유) — 그새 다 판 후보는 고를 때의 '보유 …' 이유를 SOLD_WHY 로 바꾼다.
   대화마다 보유 종목 한 자리(오래 이야기하지 않은 보유 종목)를 두고, 보유 종목에는 매도 점검(평단·손익·비중·지표·신호)이 붙어
   에이전트가 매도 타이밍을 따진다(agents.EXIT_RULES). 트레이더 점검도 보유 종목부터 본다.
 - 입장판(Board): 에이전트·종목별 최신 입장과 표의 무게(track.weight = 확신 × 지난 판단 성과). STALE_MIN 분이 지나면 빠진다.
@@ -65,6 +66,7 @@ POLL_TRIES = 2
 POLL_TURNS = 4
 ASK_GAP_MIN = 10
 MAX_WATCH = 5
+SOLD_WHY = "보유했던 종목 — 지금 계좌에 0주 (다 팔았어요)"  # 고를 때 보유였던 후보가 지금 0주면 이유를 이것으로 바꾼다 (_sync_held)
 RESEARCHERS = ("strategist", "sector", "scout")
 RESEARCH_TOOLS = ["get_quote", "get_technicals", "get_company_info", "get_valuation", "search_news", "get_market_overview"]
 RESEARCH_SCHEMA = {"type": "object", "properties": {"reply": {"type": "string"}, "watch": {"type": "array", "items": {"type": "string"}}},
@@ -316,10 +318,14 @@ class Stream:
         self.holdings, self.held_read = rows, True
         held = {h["symbol"]: h["quantity"] for h in rows}
         for c in self.candidates:
+            was = c.get("held")
             c["held"] = held.get(c["symbol"], 0.0)
+            if not c["held"] and (was or str(c.get("why") or "").startswith("보유")):
+                c["why"] = SOLD_WHY  # 고를 때의 '보유 — 매도 점검'·'보유 종목'·보유 손익을 그대로 두면 지금 0주인데 보유로 읽힌다
         known = {c["symbol"] for c in self.candidates}
-        self.candidates += [{"symbol": h["symbol"], "name": h["name"] or h["symbol"], "security_type": "", "held": h["quantity"], "why": "보유 종목"}
-                            for h in rows if h["symbol"] not in known]
+        self.candidates += market.fill_names(self.conn, self.p, [{"symbol": h["symbol"], "name": h["name"] or h["symbol"], "security_type": "",
+                                                                  "held": h["quantity"], "why": "보유 종목"}
+                                                                 for h in rows if h["symbol"] not in known])
         self.names.update({c["symbol"]: c["name"] for c in self.candidates})
         return held
 

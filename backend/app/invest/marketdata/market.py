@@ -612,6 +612,44 @@ def provider() -> SampleMarket | TossMarket:
     return TossMarket() if config.toss_configured() else SampleMarket()
 
 
+def master(conn: sqlite3.Connection | None, p: SampleMarket | TossMarket, symbols: list[str]) -> dict[str, dict]:
+    """종목 마스터 → {종목: {name, security_type}}. 종목 목록(invest_universe, 하루 한 번 갱신)에서 먼저, 없으면 종목 정보(p.info)."""
+    want = list(dict.fromkeys(s for s in symbols if s))
+    out: dict[str, dict] = {}
+    if want and conn is not None:
+        try:
+            marks = ",".join("?" * len(want))
+            out = {r[0]: {"name": r[1] or "", "security_type": r[2] or ""} for r in conn.execute(
+                f"SELECT symbol, name, security_type FROM invest_universe WHERE symbol IN ({marks})", want)}
+        except sqlite3.Error:
+            out = {}
+    for s in want:
+        if out.get(s, {}).get("name") and out[s].get("security_type"):
+            continue
+        try:
+            info = p.info(s)
+        except (MarketError, TossError):
+            continue
+        prev = out.get(s, {})
+        out[s] = {"name": prev.get("name") or info.get("name") or "", "security_type": prev.get("security_type") or info.get("security_type") or ""}
+    return out
+
+
+def fill_names(conn: sqlite3.Connection | None, p: SampleMarket | TossMarket, rows: list[dict]) -> list[dict]:
+    """후보·풀 줄 중 이름이 비었거나 코드뿐이고 유형(security_type)이 빈 것을 종목 마스터로 채운다 (rows 를 고쳐 그대로 돌려준다)."""
+    todo = [r for r in rows if not r.get("name") or r.get("name") == r.get("symbol") or not r.get("security_type")]
+    if not todo:
+        return rows
+    found = master(conn, p, [r["symbol"] for r in todo])
+    for r in todo:
+        m = found.get(r["symbol"]) or {}
+        if (not r.get("name") or r.get("name") == r["symbol"]) and m.get("name"):
+            r["name"] = m["name"]
+        if not r.get("security_type") and m.get("security_type"):
+            r["security_type"] = m["security_type"]
+    return rows
+
+
 def snapshot(p: SampleMarket | TossMarket, symbol: str) -> dict:
     """종목 머리글·정보 탭: 현재가, 전일 대비, 오늘 시고저, 최근 범위 고저, 상하한가, 기본 정보."""
     symbol = symbol_ok(symbol) if p.key == "toss" else symbol.strip()
