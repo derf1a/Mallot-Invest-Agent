@@ -44,7 +44,8 @@ CONFIG_KO = {"research": "장 전 리서치", "prep_min": "장 시작 몇 분 �
              "adhoc": "경보 때 수시 회의", "refresh": "시장 급변 때 리서치 다시"}
 
 REGIME_KO = {"risk_on": "위험 선호", "neutral": "중립", "risk_off": "위험 회피"}
-CASH_KO = {"raise": "현금 늘리기", "keep": "현금 유지", "lower": "현금 줄이기"}
+# 주식 비중은 100% 고정(config.EQUITY_TARGET_PCT) — 현금 의견 대신 주식 안에서 방어 · 공격 쪽으로 옮기는 의견 (키는 예전 그대로)
+CASH_KO = {"raise": "방어 업종으로 이동", "keep": "구성 유지", "lower": "공격 업종 확대"}
 TRIGGER_KO = {"morning": "장 전 리서치", "market_move": "시장 급변 — 다시 보기", "manual": "지금 리서치", "assistant": "비서 요청"}
 
 # 리서치 담당 (토론 명단과 따로 — 회의에서 입장을 내지 않고 회의 전에 안건을 만든다). 프로필 포켓몬: 시장 전략가 야부엉(멀리 내다봄) ·

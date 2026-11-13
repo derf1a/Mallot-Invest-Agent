@@ -5,7 +5,9 @@
 - 저장(settings invest_policy) + 바뀐 기록(invest_policy_history, 최근 HISTORY 개: 언제·누가·왜·항목별 전 → 후).
 - 쓰임: 토론 에이전트·트레이더·포트폴리오 매니저(회의 후보)·리서치 데스크·일정 담당·비서 프롬프트에 '운용 목표' 글(text)로,
   보고서에 목표 대비 지금(주식 비중·수익률·벤치마크).
-- 주문 한도(건당·하루·종목 비중)는 코드 한도(config.limits)가 그대로 — 운용 목표의 종목당 최대 비중은 그보다 낮을 때만 의미가 있다.
+- 주문 한도(건당·하루)는 코드 한도(config.limits), 종목 · 섹터 비중 한도는 에이전트가 정한다(config.risk_limits) — 운용 목표의 종목당
+  최대 비중은 그보다 낮을 때만 의미가 있다.
+- 주식 비중 목표는 100% 고정(config.EQUITY_TARGET_PCT) — 예수금 · 채권 · 현금성 상품에 돈을 두지 않는다. 다른 값으로는 바꿀 수 없다.
 """
 
 import json
@@ -13,6 +15,7 @@ import re
 import sqlite3
 from datetime import datetime
 
+from app.invest.broker.config import EQUITY_TARGET_PCT
 from app.invest.marketdata import market
 
 S_POLICY = "invest_policy"
@@ -123,6 +126,7 @@ def get(conn: sqlite3.Connection) -> dict:
             v = None
         if v is not None:
             out[k] = v
+    out["equity_target"] = EQUITY_TARGET_PCT  # 고정 — 저장된 값이 달라도 100%
     if isinstance(raw, dict) and raw.get("updated_at"):
         out["updated_at"] = raw["updated_at"]
         out["updated_by"] = raw.get("updated_by")
@@ -157,6 +161,8 @@ def save(conn: sqlite3.Connection, changes: dict, *, by: str, reason: str = "", 
     nxt = {k: v for k, v in cur.items() if k in FIELDS}
     for field, value in changes.items():
         v = clean(field, value)
+        if field == "equity_target":  # 고정 — 다른 값을 줘도 100% (예수금 · 채권 · 현금성 상품에 돈을 두지 않는다)
+            v = EQUITY_TARGET_PCT
         if v is None:
             nxt.pop(field, None)
         else:
@@ -181,6 +187,7 @@ def text(p: dict) -> str:
     lines = [f"- {FIELDS[k]['label']}: {show(k, p[k])}" for k in FIELDS if p.get(k) is not None]
     if not lines:
         return ""
+    lines.append(f"- 해석: 주식 비중 {EQUITY_TARGET_PCT:g}% — 매수 가능 금액(예수금)은 쉬게 두지 말고 주식에 투자하세요. 채권 · 현금성 ETF 는 사지 않습니다.")
     if p.get("risk") and p.get("max_drawdown") is not None:
         lines.append(f"- 해석: 손실이 고점 대비 {p['max_drawdown']:g}%에 가까워지면 신규 매수를 줄이고 위험을 낮추세요.")
     return "\n".join(lines)
