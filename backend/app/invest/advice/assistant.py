@@ -260,7 +260,7 @@ def _context(conn: sqlite3.Connection, msg_id: int, header: str = "관리자의 
     ints = st["intents"]
     lines.append("운용 지시: " + ("없음" if not ints else "\n" + "\n".join(
         f"- [{i['id']}] {i['text']}{' (이번만)' if i.get('once') else ''}" for i in ints)))
-    runs = conn.execute("SELECT id, name, status, summary_json FROM runs WHERE kind = 'agent_action' ORDER BY id DESC LIMIT 3").fetchall()
+    runs = conn.execute("SELECT id, name, status, error, summary_json FROM runs WHERE kind = 'agent_action' ORDER BY id DESC LIMIT 3").fetchall()
     if runs:
         out = []
         for r in runs:
@@ -270,7 +270,10 @@ def _context(conn: sqlite3.Connection, msg_id: int, header: str = "관리자의 
                 s = {}
             orders = ", ".join(f"{o['name']} {o['side']} {o['quantity']:g}주 {o['status']}" for o in s.get("orders") or []) or "주문 없음"
             status = "중단(서버 재시작 — 실패 아님)" if s.get("interrupted") else r["status"]
-            out.append(f"- #{r['id']} {r['name']} · {status} · 게이트 {s.get('gate', '-')} · {orders}")
+            if r["status"] == "failed" and not s.get("interrupted") and r["error"]:  # 실패 원인을 같이 — 무엇 때문에 멈췄는지
+                status += f"(원인: {r['error'][:120]})"
+            head = (s.get("minutes") or {}).get("headline")
+            out.append(f"- #{r['id']} {r['name']} · {status} · 게이트 {s.get('gate', '-')} · {orders}" + (f" · {head}" if head else ""))
         lines.append("최근 판단:\n" + "\n".join(out))
     research = desk.brief(conn, now.date())
     lines.append("오늘 리서치: " + (f"\n{research}" if research else "아직 없음"))

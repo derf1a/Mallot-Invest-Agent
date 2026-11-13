@@ -97,3 +97,33 @@ def test_interrupted_stream_keeps_its_orders():
         assert meetings[-1]["id"] == old and meetings[-1]["status"] == "interrupted"
         ctx = assistant._context(conn, assistant.add(conn, "user", "어제 왜 실패했어?")["id"])
         assert f"#{old} 상시 운용 · 11-10 · 중단(서버 재시작 — 실패 아님)" in ctx and "KT buy" in ctx
+
+
+def test_failed_stream_keeps_its_orders_and_cause(client, jobs):
+    """오류로 멈춘 상시 운용 — 그때까지 낸 주문이 실행에 이어지고 머리말에 원인이 남는다 ('실패 · 게이트 - · 주문 없음'으로 읽히지 않게)."""
+    from app.invest.advice import assistant
+    from app.invest.jobs import agent_action
+
+    def boom(ctx: RunContext, _params: dict) -> dict:
+        ctx.conn.execute("INSERT INTO invest_orders (symbol, name, side, order_type, quantity, status, run_id) "
+                         "VALUES ('030200', 'KT', 'buy', 'market', 2, 'filled', ?)", (ctx.run_id,))
+        ctx.conn.commit()
+        raise RuntimeError("시세 연결 끊김")
+
+    def stop(_ctx: RunContext, _params: dict) -> dict:
+        raise runner.Cancelled()
+
+    runner.register(JobSpec("agent_action", "상시 운용", "", boom, on_failed=agent_action.failed_summary))
+    runner.register(JobSpec("stop", "상시 운용", "", stop, on_failed=agent_action.failed_summary))
+    with connect() as conn:
+        rid = runner.start_run(conn, "agent_action", {"stream": True, "autopilot": True, "trigger": "stream"}, name="상시 운용 · 11-10")
+        run = runner.load_run(conn, rid)
+        s = run["summary"]
+        assert run["status"] == "failed" and run["error"] == "RuntimeError: 시세 연결 끊김"
+        assert [o["symbol"] for o in s["orders"]] == ["030200"] and s["gate"] == "aligned" and s["end"] == "failed"
+        assert s["minutes"]["headline"] == "주문 1건(체결 1건) — 실패: RuntimeError: 시세 연결 끊김"
+        assert "체결: KT 매수." in s["minutes"]["summary"] and s["minutes"]["kind"] == "상시 운용 (하루)"
+        ctx = assistant._context(conn, assistant.add(conn, "user", "왜 실패했어?")["id"])
+        assert "failed(원인: RuntimeError: 시세 연결 끊김) · 게이트 aligned · KT buy 2주 filled" in ctx
+        stopped = runner.load_run(conn, runner.start_run(conn, "stop", {"stream": True}, name="상시 운용"))
+        assert stopped["status"] == "cancelled" and stopped["summary"]["minutes"]["headline"] == "낸 주문 없음 — 중지: 사용자가 중지함"
