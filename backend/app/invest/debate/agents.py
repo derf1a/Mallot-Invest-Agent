@@ -174,7 +174,10 @@ TOOL_INFO: dict[str, dict] = {
     "get_trading_limits": {"title": "주문 한도", "desc": "건당·하루 한도, 오늘 사용액, 매수 가능 금액, 후보 종목별 판매 가능 수량, 종목 비중 한도.",
                            "schema": {"type": "object", "properties": {}}},
     EXECUTOR_TOOL: {"title": "주문 실행", "desc": "게이트가 열린 종목만 그 방향으로 주문한다. 종목당 1건, 세션당 최대 3건. "
-                                                 "symbol, side=buy|sell, quantity=정수 주, order_type=market|limit, limit 이면 price.",
+                                                 "symbol, side=buy|sell, quantity=정수 주, order_type=market|limit. 지정가는 price(원) 또는 "
+                                                 "price_at(bid 매수 1호가 · ask 매도 1호가 · mid · last 현재가) + ticks(호가 칸, + 위 · − 아래) — "
+                                                 "코드가 지금 호가에서 가격을 계산한다. 예: 매수 price_at=bid ticks=0 은 매수 1호가에 걸고 기다림, "
+                                                 "price_at=ask 는 바로 체결 쪽. 자동 주문은 장 시작 30분 안에는 지정가만, 마감 동시호가 전까지만.",
                     "read_only": False,
                     "schema": {"type": "object", "properties": {
                         **_SYM,
@@ -182,6 +185,8 @@ TOOL_INFO: dict[str, dict] = {
                         "quantity": {"type": "integer", "minimum": 1},
                         "order_type": {"type": "string", "enum": ["market", "limit"]},
                         "price": {"type": "number"},
+                        "price_at": {"type": "string", "enum": list(trading.PRICE_AT)},
+                        "ticks": {"type": "integer", "minimum": -trading.MAX_TICKS, "maximum": trading.MAX_TICKS},
                         "reason": {"type": "string"}}, "required": ["side", "quantity", "order_type", "reason"]}},
 }
 
@@ -393,19 +398,23 @@ def _handlers(s: Session) -> dict[str, Callable[[dict], Awaitable[object]]]:
         try:
             qty = int(a.get("quantity") or 0)
             price = float(a["price"]) if a.get("price") not in (None, "") else None
+            price_at = str(a.get("price_at") or "").strip() or None
+            ticks = int(a.get("ticks") or 0)
         except (TypeError, ValueError):
             return {"ok": False, "error": "수량·가격 형식이 올바르지 않습니다"}
         try:
             order = trading.place_order(s.conn, symbol=sym, side=side, order_type=str(a.get("order_type") or "market"),
-                                        quantity=qty, price=price, source="agent", run_id=s.run_id,
-                                        reason=str(a.get("reason") or "")[:1000], market=p, auto_submit=s.auto_submit)
+                                        quantity=qty, price=None if price_at else price, source="agent", run_id=s.run_id,
+                                        reason=str(a.get("reason") or "")[:1000], market=p, auto_submit=s.auto_submit,
+                                        price_at=price_at, ticks=ticks)
         except TradeError as e:
             s.order_errors[sym] = str(e)
             return {"ok": False, "error": str(e), "checks": e.checks}
         s.orders[sym] = order
         s.emit({"type": "order", "order": order})
-        return {"ok": True, "order_id": order["id"], "symbol": sym, "status": order["status"],
-                "quantity": order["quantity"], "avg_fill_price": order["avg_fill_price"], "checks": order["checks"],
+        return {"ok": True, "order_id": order["id"], "symbol": sym, "status": order["status"], "order_type": order["order_type"],
+                "price": order["price"], "quantity": order["quantity"], "filled_quantity": order.get("filled_quantity"),
+                "avg_fill_price": order["avg_fill_price"], "checks": order["checks"],
                 "note": "관리자(사용자) 승인 대기 — 승인하면 제출됩니다" if order["status"] == "pending_approval" else None}
 
     return {"get_quote": get_quote, "get_price_history": get_price_history, "get_technicals": get_technicals,
@@ -496,7 +505,8 @@ DEFAULT_ROSTER: list[dict] = [
      "tools": ["get_portfolio", "get_trading_limits", "get_technicals", "get_market_overview", "get_disclosures"]},
     {"key": "trader", "title": "트레이더", "enabled": True, "executor": True,
      "persona": "실행 담당. 토론 결과와 계좌·한도·호가를 확인해 주문 여부와 수량을 정한다. 확신이 약하거나 호가가 불리하면 "
-                "행동하지 않는다. 한 번에 한도의 일부만 쓴다.",
+                "행동하지 않는다. 한 번에 한도의 일부만 쓴다. 급하지 않으면 시장가보다 호가 기준 지정가(price_at · ticks)로 "
+                "매수는 매수 호가 근처, 매도는 매도 호가 근처에 걸어 체결을 기다린다. 급한 손절·급변일 때만 바로 체결 쪽(시장가·상대 호가).",
      "tools": ["get_quote", "get_orderbook", "get_portfolio", "get_trading_limits", EXECUTOR_TOOL]},
 ]
 _KEY = re.compile(r"^[a-z][a-z0-9_]{1,24}$")
@@ -696,6 +706,10 @@ EXIT_RULES = """[보유 종목 매도 타이밍 — 가진 종목은 매번 '지
 - 계속 들고 간다면(none 또는 buy) reason 에 언제 팔지 — 손절가·목표가 또는 조건(예: 종가로 20일선을 깨면) — 를 함께 쓰세요.
   보유 종목의 none 은 '근거 부족'이 아니라 '지금은 계속 보유'라는 뜻입니다.
 - '매도 점검' 줄은 코드가 계산한 사실이고 '신호'는 따져 볼 거리입니다. 신호가 있으면 반드시 다루되 신호만으로 팔지 말고 도구로 확인하세요."""
+ORDER_STYLE = ("가격: 급하지 않으면 호가 기준 지정가로 — place_order 에 order_type=limit, price_at=bid(매수 1호가)·ask(매도 1호가)·mid·last, "
+               "ticks(호가 칸, + 위 · − 아래)를 주면 코드가 지금 호가에서 가격을 계산합니다. 매수는 bid(ticks 0~+1), 매도는 ask(ticks −1~0)에 "
+               "걸어 체결을 기다리고, 손절·급변처럼 바로 체결해야 할 때만 상대 호가(매수 ask · 매도 bid)나 시장가. 자동 주문은 장 시작 30분 안에는 "
+               "지정가만, 마감 동시호가 전까지만 받습니다. 같은 종목에 체결 안 된 주문이 있으면 새 주문은 거절됩니다.")
 SELL_SIZING = ("매도는 찬성 의견의 이유에 맞춰 수량을 정하세요 — 손절·추세 꺾임은 전량, 차익 일부 실현·비중 조절은 일부 "
                "(get_trading_limits 의 판매 가능 수량 안에서).")
 
@@ -815,7 +829,7 @@ def trader_prompt(s: Session, transcript: list[dict], gate: dict, needs_approval
             + "\n\n할 일: get_portfolio·get_trading_limits·get_quote·get_orderbook 으로 계좌·한도·호가를 확인하고, 열린 종목마다 "
               "그 방향으로 주문할지 행동하지 않을지(hold) 정하세요. 주문한다면 한도와 비중 안에서 수량을 정하고 place_order 를 종목당 한 번 "
               f"호출하세요(symbol 필수, 세션당 최대 {MAX_ORDERS}건, 닫힌 종목·반대 방향은 시스템이 거절). 거절되면 사유를 보고 한 번만 "
-              "수량을 줄여 다시 시도할 수 있습니다. " + (SELL_SIZING + " " if any(x["direction"] == "sell" for x in gate["aligned"]) else "")
+              "수량을 줄여 다시 시도할 수 있습니다. " + ORDER_STYLE + " " + (SELL_SIZING + " " if any(x["direction"] == "sell" for x in gate["aligned"]) else "")
             + "마지막에 decisions(종목별 buy|sell|hold·quantity)·rationale 을 JSON 으로 답하세요. "
               "rationale 에는 이번에 내는 주문(없으면 관망 이유)만 짧게 — 지난 회의의 주문을 다시 적지 마세요.")
 

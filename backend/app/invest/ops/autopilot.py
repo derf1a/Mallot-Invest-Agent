@@ -34,7 +34,7 @@ from datetime import date, datetime
 
 from app.core import envfile
 from app.invest.analysis import policy
-from app.invest.broker import config
+from app.invest.broker import config, trading
 from app.invest.broker.toss import TossError
 from app.invest.marketdata import market
 from app.invest.marketdata.market import MarketError
@@ -57,8 +57,8 @@ MAX_ADHOC = 3          # 리스크 경보로 여는 수시 회의 하루 최대
 MAX_ASSISTANT = 4      # 비서가 안건을 정해 더하는 회의 하루 최대 (AI 추가 max_extra 와 따로)
 ASSIST_LEAD_MIN = 2    # 비서가 정하는 회의는 지금부터 이만큼 뒤부터
 WHO = {"ai": "AI", "assistant": "비서"}
-OPEN_AFTER_MIN = 5     # 정규장 시작 뒤 이만큼 지나서부터
-CLOSE_BEFORE_MIN = 15  # 정규장 끝나기 이만큼 전까지 (마감 동시호가 전)
+OPEN_AFTER_MIN = market.OPEN_AFTER_MIN      # 정규장 시작 뒤 이만큼 지나서부터 (정의는 market — 주문 검사도 같이 쓴다)
+CLOSE_BEFORE_MIN = market.CLOSE_BEFORE_MIN  # 정규장 끝나기 이만큼 전까지 (마감 동시호가 전)
 GRACE_MIN = 20         # 이만큼 넘게 늦은 일정은 따라잡지 않는다
 MIN_GAP_MIN = 20       # AI 가 정하는 시각은 다른 판단과 이만큼 떨어져야
 LEAD_MIN = 10          # AI 가 정하는 시각은 지금부터 이만큼 뒤부터
@@ -257,12 +257,8 @@ def _record(conn: sqlite3.Connection, entry: dict, status: str, *, now: datetime
 
 
 def trading_window(p) -> tuple[str, str] | None:
-    """오늘 자동 판단을 시작할 수 있는 시각 (정규장 시작 + 5분 ~ 끝 − 15분). 휴장일이면 None."""
-    sess = p.session()
-    start, end = sess.get("start"), sess.get("end")
-    if not start or not end:
-        return None
-    return _hhmm(_minutes(start) + OPEN_AFTER_MIN), _hhmm(_minutes(end) - CLOSE_BEFORE_MIN)
+    """오늘 자동 판단을 시작할 수 있는 시각 (정규장 시작 + 5분 ~ 끝 − 15분). 휴장일이면 None. 주문 검사(trading)와 같은 정의."""
+    return market.trading_window(p)
 
 
 def blocked(conn: sqlite3.Connection) -> str | None:
@@ -331,6 +327,28 @@ def tick(conn: sqlite3.Connection, now: datetime | None = None, provider=None, a
             return None  # 다른 토론이 끝나면 (GRACE_MIN 안에서) 다시 본다
         run_id = _start(conn, entry, agenda=why, focus={s: why for s in entry.get("focus") or []})
     return _record(conn, entry, "started", now=now, run_id=run_id, note=f"안건: {why}" if why else None)
+
+
+def close_out(conn: sqlite3.Connection, now: datetime | None = None, provider=None) -> list[dict] | None:
+    """자동 주문 시간이 끝난 뒤(정규장 끝 − CLOSE_BEFORE_MIN ~ 끝) 체결 안 된 자동 주문을 취소한다 — 걸어 둔 지정가가 마감
+    동시호가에서 체결되지 않게. 할 일이 없으면 None."""
+    if not get_config(conn)["enabled"] or not config.toss_configured():
+        return None
+    now = now or market.now_kst()
+    p = provider or market.provider()
+    try:
+        win, sess = trading_window(p), p.session()
+    except (MarketError, TossError):
+        return None
+    if not win or not sess.get("end"):
+        return None
+    minute = now.hour * 60 + now.minute
+    if not _minutes(win[1]) < minute <= _minutes(sess["end"]):
+        return None
+    try:
+        return trading.cancel_open_agent_orders(conn, market=p) or None
+    except trading.TradeError:
+        return None
 
 
 # ---- 상시 운용 채널 ----

@@ -96,8 +96,10 @@ def debate_agents(conn: sqlite3.Connection) -> list[dict]:
                        "text": f"게이트가 닫힌 종목 · 반대 방향 거절, 종목당 1건, 세션당 {agents.MAX_ORDERS}건, "
                                f"종목당 시도 {agents.MAX_ATTEMPTS_PER_SYMBOL}회"},
                       {"title": "주문 검사 (모든 주문이 지나는 한 곳)", "ref": ref(trading.place_order),
-                       "text": "전체 중지 → 주문 조건(토스 키 · PIN) → 국내 종목 → 정수 수량 · 호가 단위 → 건당 한도 → 하루 한도 → "
-                               "매수 가능 금액 / 판매 가능 수량 → 매수 후 종목 비중"}]
+                       "text": "전체 중지 → 주문 조건(토스 키 · PIN) → 자동 주문이면 자동 주문 시간(정규장 +5분 ~ 끝 −15분) · "
+                               "장 시작 30분은 지정가만 → 국내 종목 → 정수 수량 · 호가 단위(호가 기준 지정가는 코드가 계산) → "
+                               "자동 주문이면 같은 종목 미체결 주문 없음 → 건당 한도 → 하루 한도 → 매수 가능 금액 / 판매 가능 수량 → "
+                               "매수 후 종목 비중. 판단 시간이 끝나면 체결 안 된 자동 주문은 취소"}]
             talks = [{"to": "trading", "why": "place_order — 열린 종목만, 코드 검사 두 겹"},
                      {"to": "admin", "why": "승인 카드 (승인 생략이 꺼져 있으면)"}]
             hears = [{"from": x["key"], "why": "최종 라운드 의견"} for x in analysts] + [{"from": "gate", "why": "열린 종목 · 방향"}]

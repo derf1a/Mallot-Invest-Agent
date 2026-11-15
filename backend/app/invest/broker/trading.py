@@ -3,6 +3,10 @@
 모든 주문(수동·에이전트)은 place_order 를 지나며, 그 앞에서 코드가 검사한다:
   전체 중지 → 주문 조건(토스 키·PIN) → 수동 주문 확인 → 국내(원화) 종목만 → 수량·가격 형식 → 건당 한도 → 하루 한도
   → 매수 가능 금액 / 판매 가능 수량 → 매수 후 종목 비중 한도.
+승인 없이 바로 나가는 에이전트 주문(자동 운용)은 더: 자동 주문 시간(정규장 +5분 ~ 끝 −15분, 마감 동시호가 전) 안에서만,
+장 시작 30분 안에는 지정가만(market.auto_order_problem), 같은 종목에 체결 안 된 에이전트 주문이 있으면 새 주문을 내지 않는다.
+호가 기준 지정가: price_at(bid 매수 1호가 · ask 매도 1호가 · mid 가운데 · last 현재가) + ticks(호가 단위 칸, + 위 · − 아래)를 주면
+코드가 지금 호가에서 가격을 계산한다 — 매수는 bid 근처, 매도는 ask 근처에 걸어 두고 체결을 기다리는 주문.
 에이전트 주문은 기본으로 승인 대기(pending_approval) — 사용자(관리자)가 승인해야 제출된다. 실험실에서 '승인 생략'을 켜면 바로 제출.
 """
 
@@ -18,6 +22,9 @@ from app.invest.marketdata import market as market_mod
 from app.invest.marketdata.market import MarketError, SampleMarket, TossMarket, tick_size
 
 OPEN = ("open", "partial")
+PRICE_AT = {"bid": "매수 1호가", "ask": "매도 1호가", "mid": "호가 가운데", "last": "현재가"}
+MAX_TICKS = 20
+CHECK_HOURS = True  # 자동 주문 시간 검사 (테스트는 시계를 고정한 것만 켠다)
 TOSS_STATUS = {"PENDING": "open", "PENDING_CANCEL": "open", "PENDING_REPLACE": "open", "CANCEL_REJECTED": "open",
                "REPLACE_REJECTED": "open", "PARTIAL_FILLED": "partial", "FILLED": "filled", "CANCELED": "cancelled",
                "REPLACED": "cancelled", "REJECTED": "rejected"}
@@ -215,11 +222,59 @@ def check_order(conn: sqlite3.Connection, acct: TossAccount, *, symbol: str, sid
     return passed
 
 
+def resolve_price(market, symbol: str, side: str, price_at: str, ticks: int = 0, security_type: str | None = None) -> tuple[float, str]:
+    """호가 기준 지정가 → (가격, 설명). 상한가 · 하한가 안으로 자른다."""
+    if price_at not in PRICE_AT:
+        raise TradeError("price_at 은 bid(매수 1호가) · ask(매도 1호가) · mid · last 중 하나입니다")
+    if not isinstance(ticks, int) or abs(ticks) > MAX_TICKS:
+        raise TradeError(f"ticks 는 -{MAX_TICKS}~{MAX_TICKS} 사이 정수입니다")
+    try:
+        if price_at == "last":
+            base = (market.quotes([symbol]).get(symbol) or {}).get("price")
+        else:
+            book = market.orderbook(symbol)
+            bid = (book.get("bids") or [{}])[0].get("price")
+            ask = (book.get("asks") or [{}])[0].get("price")
+            base = {"bid": bid, "ask": ask, "mid": (bid + ask) / 2 if bid and ask else None}[price_at]
+    except (MarketError, TossError) as e:
+        raise TradeError(f"호가를 받지 못해 가격을 정할 수 없습니다 ({e})", 502) from None
+    if not base:
+        raise TradeError(f"{PRICE_AT[price_at]}가 없어 가격을 정할 수 없습니다 (호가 비어 있음)", 502)
+    price = market_mod.tick_step(market_mod.snap_tick(base, side, security_type), ticks, security_type)
+    note = f"가격: {PRICE_AT[price_at]} {base:,.0f}원" + (f" {ticks:+d}틱" if ticks else "") + f" → {price:,.0f}원"
+    try:
+        lim = market.price_limits(symbol)
+    except (MarketError, TossError):
+        lim = {}
+    up, low = lim.get("upper"), lim.get("lower")
+    if up and price > up:
+        price, note = up, note + f" (상한가 {up:,.0f}원으로)"
+    if low and price < low:
+        price, note = low, note + f" (하한가 {low:,.0f}원으로)"
+    if price <= 0:
+        raise TradeError("계산한 가격이 0 이하입니다 — ticks 를 줄이세요")
+    return price, note
+
+
+def _open_agent_order(conn: sqlite3.Connection, acct: TossAccount, symbol: str) -> dict | None:
+    """이 종목에 아직 체결되지 않은(제출됨 · 일부 체결) 에이전트 주문. 상태를 토스에서 먼저 맞춘다."""
+    rows = conn.execute("SELECT * FROM invest_orders WHERE symbol = ? AND source = 'agent' AND status IN ('open', 'partial') "
+                        "AND date(created_at) = ?", (symbol, date.today().isoformat())).fetchall()
+    for r in rows:
+        if hasattr(acct, "_sync_one"):
+            acct._sync_one(order_dict(r))
+    row = conn.execute("SELECT * FROM invest_orders WHERE symbol = ? AND source = 'agent' AND status IN ('open', 'partial') "
+                       "AND date(created_at) = ? ORDER BY id DESC LIMIT 1", (symbol, date.today().isoformat())).fetchone()
+    return order_dict(row) if row else None
+
+
 def place_order(conn: sqlite3.Connection, *, symbol: str, side: str, order_type: str, quantity: float,
                 price: float | None = None, source: str = "manual", run_id: int | None = None, reason: str = "",
-                confirm_live: bool = False, market=None, acct: TossAccount | None = None, auto_submit: bool = False) -> dict:
+                confirm_live: bool = False, market=None, acct: TossAccount | None = None, auto_submit: bool = False,
+                price_at: str | None = None, ticks: int = 0) -> dict:
     """주문 하나 — 검사 → 기록 → (승인 대기가 아니면) 토스로 제출. 만들어진 주문을 돌려준다.
-    auto_submit: 에이전트 주문을 승인 없이 바로 낸다 — 사용자가 PIN 으로 켠 자동 운용(autopilot) 세션만 쓴다."""
+    auto_submit: 에이전트 주문을 승인 없이 바로 낸다 — 사용자가 PIN 으로 켠 자동 운용(autopilot) 세션만 쓴다.
+    price_at · ticks: 호가 기준 지정가 (price 대신 — 주면 order_type 은 limit)."""
     if config.halted(conn):
         raise TradeError("전체 주문 중지 중입니다 (설정 > 투자에서 해제)", 409)
     blockers = config.trading_blockers()
@@ -229,10 +284,18 @@ def place_order(conn: sqlite3.Connection, *, symbol: str, side: str, order_type:
     acct = acct or account(conn, market=market)
     if side not in ("buy", "sell"):
         raise TradeError("주문 방향은 buy 또는 sell 입니다")
+    if price_at:
+        order_type = "limit"
     if order_type not in ("market", "limit"):
         raise TradeError("주문 유형은 market(시장가) 또는 limit(지정가) 입니다")
     if source == "manual" and not confirm_live:
         raise TradeError("실계좌 주문입니다 — 확인(confirm_live)이 필요합니다", 428)
+    require_approval = source == "agent" and not (auto_submit or config.agent_auto_approve(conn))
+    auto = source == "agent" and not require_approval
+    if auto and CHECK_HOURS:
+        why = market_mod.auto_order_problem(market, order_type)
+        if why:
+            raise TradeError(why, 409)
     try:
         info = market.info(symbol)
         quote = market.quotes([symbol]).get(symbol) or {}
@@ -245,6 +308,9 @@ def place_order(conn: sqlite3.Connection, *, symbol: str, side: str, order_type:
     if not quantity or quantity <= 0 or not float(quantity).is_integer():
         raise TradeError("수량은 1주 이상의 정수입니다")
     ref = quote.get("price")
+    price_note = None
+    if price_at:
+        price, price_note = resolve_price(market, symbol, side, price_at, ticks, info.get("security_type"))
     if order_type == "limit":
         if not price or price <= 0 or not math.isfinite(price):
             raise TradeError("지정가 주문에는 가격이 필요합니다")
@@ -256,9 +322,15 @@ def place_order(conn: sqlite3.Connection, *, symbol: str, side: str, order_type:
     if not ref and order_type == "market":
         raise TradeError("현재가를 알 수 없어 시장가 주문을 낼 수 없습니다", 502)
     unit = price or ref
-    require_approval = source == "agent" and not (auto_submit or config.agent_auto_approve(conn))
+    if auto:
+        pending = _open_agent_order(conn, acct, symbol)
+        if pending:
+            raise TradeError(f"이 종목에 아직 체결되지 않은 주문이 있습니다 (#{pending['id']} {pending['side']} "
+                             f"{pending['quantity']:g}주 @ {pending['price'] or 0:,.0f}원) — 체결되거나 취소된 뒤에 다시", 409)
     try:
         checks = check_order(conn, acct, symbol=symbol, side=side, quantity=quantity, unit_price=unit)
+        if price_note:
+            checks = [price_note, *checks]
     except TradeError as e:
         if source == "agent":  # 에이전트가 시도한 주문은 거절돼도 기록해 둔다 (토론 기록과 함께 보도록)
             _insert(conn, info, symbol, side, order_type, quantity, price, ref, "rejected", source, run_id,
@@ -324,6 +396,29 @@ def cancel(conn: sqlite3.Connection, order_id: int, market=None) -> dict:
         raise TradeError(f"취소할 수 없는 상태입니다 ({order['status']})", 409)
     account(conn, market=market).cancel(order)
     return get_order(conn, order_id)
+
+
+def cancel_open_agent_orders(conn: sqlite3.Connection, market=None) -> list[dict]:
+    """오늘 체결 안 된 에이전트 주문(제출됨 · 일부 체결)을 모두 취소한다 — 자동 주문 시간이 끝나면(마감 동시호가 전) 운용이 부른다.
+    취소에 실패한 주문은 error 에 남기고 넘어간다. → 취소를 시도한 주문들(최신 상태)"""
+    rows = conn.execute("SELECT * FROM invest_orders WHERE source = 'agent' AND status IN ('open', 'partial') "
+                        "AND broker_order_id IS NOT NULL AND date(created_at) = ?", (date.today().isoformat(),)).fetchall()
+    if not rows:
+        return []
+    acct = account(conn, market=market)
+    out = []
+    for r in rows:
+        order = order_dict(r)
+        acct._sync_one(order)
+        order = get_order(conn, order["id"])
+        if order["status"] not in OPEN:
+            continue
+        try:
+            acct.cancel(order)
+        except TradeError as e:
+            _set(conn, order["id"], error=f"자동 주문 시간 끝 — 취소 실패: {e}")
+        out.append(get_order(conn, order["id"]))
+    return out
 
 
 def list_orders(conn: sqlite3.Connection, status: str = "all", limit: int = 100, run_id: int | None = None,
