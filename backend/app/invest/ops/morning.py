@@ -2,6 +2,8 @@
 
 - 일정: 서비스(service.py)가 자동 운용 일정과 같이 확인한다(tick). 하루 한 번, 정한 시각부터 LATE_MIN 분 안에만 보낸다 — 서버가
   늦게 켜져도 오전 안이면 보내고, 그보다 늦으면 그날은 건너뛴다. 휴장일(토스 장 운영에 정규장이 없음)은 보내지 않는다.
+- 오늘 장 전 리서치가 아직 돌고 있으면(desk.research_running) 끝날 때까지 RESEARCH_WAIT_MIN 분까지 기다린다 — 어제 시황으로
+  오늘 브리핑을 쓰지 않게. 그 뒤엔 기다리지 않고 보낸다.
 - 내용: briefing.snapshot(보유 종목·현황 · 회의 요약 · 장내 이슈, 숫자는 모두 코드) + 비서 의견 — LLM(기능 invest_assistant)이 보고서
   글만 보고 2~4문장(막힌 것, 보유 종목에서 볼 것, 지난 회의 결론, 오늘 장내 이슈). LLM 이 실패하면 코드가 짧게 쓴다. 채팅방 기록은 보고서
   카드와 같다(event kind=report, morning).
@@ -23,7 +25,7 @@ from app.invest.advice import assistant
 from app.invest.broker.toss import TossError
 from app.invest.marketdata import market
 from app.invest.marketdata.market import MarketError
-from app.invest.ops import briefing
+from app.invest.ops import briefing, desk
 from app.llm.client import LLMError, structured
 from app.llm.routes import as_agent
 from app.system import issues
@@ -36,6 +38,7 @@ DEFAULT_CONFIG = {"enabled": True, "time": "08:30", "weekdays": [0, 1, 2, 3, 4, 
 CLOSE_RANGE = (15 * 60 + 30, 22 * 60)  # 장 마감 보고 시각 (정규장 끝난 뒤 ~ 밤 10시)
 WEEKDAY_KO = "월화수목금토일"
 LATE_MIN = 180
+RESEARCH_WAIT_MIN = 40  # 아침 브리핑은 오늘 장 전 리서치(시장 전략가)가 돌고 있으면 정한 시각부터 이만큼까지 기다린다
 _HHMM = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)$")
 
 SCHEMA = {"type": "object", "properties": {"comment": {"type": "string"}}, "required": ["comment"]}
@@ -180,6 +183,13 @@ def send(conn: sqlite3.Connection, now: datetime | None = None, provider=None, m
     return msg
 
 
+def waiting_research(conn: sqlite3.Connection, now: datetime, late_min: int) -> bool:
+    """아침 브리핑이 오늘 장 전 리서치를 기다려야 하나 — 오늘 시황이 아직 없고, 리서치가 돌고 있고, 기다린 지 RESEARCH_WAIT_MIN 분 안."""
+    if late_min >= RESEARCH_WAIT_MIN or desk.latest(conn, "market", now.date()):
+        return False
+    return desk.research_running(conn) is not None
+
+
 def tick(conn: sqlite3.Connection, now: datetime | None = None, provider=None) -> dict | None:
     """정한 시각이 지났고 오늘 아직 안 보냈으면 보낸다 — 아침 브리핑, 그다음 장 마감 보고(휴장일은 건너뛴 날로 남김). 할 일이 없으면 None."""
     cfg = get_config(conn)
@@ -202,5 +212,7 @@ def tick(conn: sqlite3.Connection, now: datetime | None = None, provider=None) -
         if closed:
             _put(conn, last_key, today)
             return {"skipped": "휴장일", **({"close": True} if close else {})}
+        if not close and waiting_research(conn, now, minute - start):
+            return None  # 오늘 리서치가 끝나면 다음 확인 때 보낸다
         return send(conn, now, p, close=close)
     return None
