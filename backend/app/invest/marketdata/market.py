@@ -55,6 +55,69 @@ def now_kst() -> datetime:
     return datetime.now(KST)
 
 
+# ---- 자동 판단 · 자동 주문 시간 (운용 · 주문 검사가 같이 쓴다) ----
+OPEN_AFTER_MIN = 5     # 정규장 시작 뒤 이만큼 지나서부터
+CLOSE_BEFORE_MIN = 15  # 정규장 끝나기 이만큼 전까지 (15:20 마감 동시호가 전)
+LIMIT_ONLY_MIN = 30    # 정규장 시작 뒤 이만큼은 자동 주문을 지정가로만 (장 초반 호가가 넓고 변동이 커서)
+
+
+def _hm(hhmm: str) -> int:
+    h, m = hhmm.split(":")
+    return int(h) * 60 + int(m)
+
+
+def _clock(p) -> datetime:
+    clock = getattr(p, "clock", None)  # 샘플 시세는 시계를 바꿔 끼울 수 있다 (테스트)
+    return clock() if callable(clock) else now_kst()
+
+
+def trading_window(p) -> tuple[str, str] | None:
+    """오늘 자동 판단 · 자동 주문을 할 수 있는 시각 (정규장 시작 + OPEN_AFTER_MIN ~ 끝 − CLOSE_BEFORE_MIN). 휴장일이면 None."""
+    sess = p.session()
+    start, end = sess.get("start"), sess.get("end")
+    if not start or not end:
+        return None
+    a, b = _hm(start) + OPEN_AFTER_MIN, _hm(end) - CLOSE_BEFORE_MIN
+    return f"{a // 60:02d}:{a % 60:02d}", f"{b // 60:02d}:{b % 60:02d}"
+
+
+def auto_order_problem(p, order_type: str, now: datetime | None = None) -> str | None:
+    """승인 없이 바로 나가는 자동 주문을 지금 낼 수 없는 이유 (없으면 None). 장 운영을 확인하지 못하면 막는다(닫힌 쪽으로 실패)."""
+    try:
+        sess = p.session()
+        win = trading_window(p)
+    except (MarketError, TossError) as e:
+        return f"장 운영 시간을 확인하지 못해 자동 주문을 낼 수 없습니다 ({e})"
+    if not win:
+        return "휴장일이라 자동 주문을 낼 수 없습니다"
+    now = now or _clock(p)
+    minute = now.hour * 60 + now.minute
+    if not _hm(win[0]) <= minute <= _hm(win[1]):
+        return f"자동 주문 시간({win[0]}~{win[1]})이 아닙니다 — 마감 동시호가 · 장 밖 주문은 내지 않습니다"
+    if order_type == "market" and minute < _hm(sess["start"]) + LIMIT_ONLY_MIN:
+        return (f"장 시작 {LIMIT_ONLY_MIN}분 안에는 시장가를 낼 수 없습니다 — order_type=limit 과 "
+                "price_at(bid·ask·mid·last) · ticks 로 호가 기준 지정가를 내세요")
+    return None
+
+
+def tick_step(price: float, ticks: int, security_type: str | None = None) -> float:
+    """price 에서 호가 단위로 ticks 칸 움직인 가격 (+ 위 · − 아래). 칸마다 그 가격대의 호가 단위를 쓴다."""
+    for _ in range(abs(ticks)):
+        if ticks > 0:
+            price += tick_size(price, security_type=security_type)
+        else:
+            price -= tick_size(price - 1e-9, security_type=security_type)  # 경계(예: 2,000원) 아래로 내려갈 땐 아래 단위
+    return round(price, 2)
+
+
+def snap_tick(price: float, side: str, security_type: str | None = None) -> float:
+    """호가 단위에 맞춘다 — 매수는 아래로, 매도는 위로 (불리한 쪽으로 넘기지 않게)."""
+    tick = tick_size(price, security_type=security_type)
+    steps = price / tick
+    steps = math.floor(steps + 1e-9) if side == "buy" else math.ceil(steps - 1e-9)
+    return round(steps * tick, 2)
+
+
 def session_bars(bars: list[dict]) -> list[dict]:
     """분봉에서 가장 최근 정규장만 — 토스 분봉에는 전날과 시간외(NXT)가 섞여 있어 그대로 쓰면 시가·VWAP 이 오늘 값이 아니다."""
     regular = [b for b in bars if REGULAR_OPEN <= b["t"][11:16] <= REGULAR_CLOSE]

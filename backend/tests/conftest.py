@@ -33,6 +33,14 @@ def no_real_llm(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def any_order_hours(monkeypatch):
+    """자동 주문 시간 검사는 끈다 — 실제 시계로 도는 테스트가 밤에도 통과하게. 시간 검사 테스트만 다시 켠다."""
+    from app.invest.broker import trading
+
+    monkeypatch.setattr(trading, "CHECK_HOURS", False)
+
+
+@pytest.fixture(autouse=True)
 def meetings_mode(monkeypatch):
     """테스트의 자동 운용 기본은 정기 회의 — 상시 운용 테스트만 mode=continuous 로 켠다. 상시 운용 채널이 실제로 기다리면(시계를
     돌리지 않은 테스트) 멈추지 않고 바로 실패하게."""

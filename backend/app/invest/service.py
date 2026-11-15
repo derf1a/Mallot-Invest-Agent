@@ -1,5 +1,5 @@
 """백그라운드 서비스 — INTERVAL 초마다 운용 데스크(desk_agents.tick: 아침 리서치·리스크 감시·시장 급변 때 리서치), 자동 운용 일정
-(autopilot.tick — 회의할 안건이 있는지는 desk.agenda), 아침 브리핑(morning.tick)을 차례로 확인한다. 데스크가 먼저라 리서치를 시작하면
+(autopilot.tick — 회의할 안건이 있는지는 desk.agenda), 자동 주문 시간이 끝나면 체결 안 된 자동 주문 취소(autopilot.close_out), 아침 브리핑(morning.tick)을 차례로 확인한다. 데스크가 먼저라 리서치를 시작하면
 같은 확인에서 회의가 그 결과를 기다린다.
 app.registry 가 서버 시작·종료 때 start·stop.
 
@@ -34,6 +34,12 @@ def _loop() -> None:
                 log.info("자동 운용 %s %s%s", rec["time"], rec["status"], f" — {rec['note']}" if rec.get("note") else "")
         except Exception:  # noqa: BLE001 — 서비스는 멈추지 않고 다음 확인 때 다시 본다
             log.exception("자동 운용 확인 중 오류")
+        try:
+            done = autopilot.close_out(conn)
+            if done:
+                log.info("자동 주문 시간 끝 — 체결 안 된 주문 %d건 취소", len(done))
+        except Exception:  # noqa: BLE001
+            log.exception("체결 안 된 자동 주문 정리 중 오류")
         try:
             sent = morning.tick(conn)
             if sent:

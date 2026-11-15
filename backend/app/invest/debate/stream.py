@@ -242,7 +242,7 @@ def trade_prompt(s: agents.Session, gate: dict, board: str, why: str, orders_lef
             + f"\n입장판:\n{board}\n\n할 일: get_portfolio·get_trading_limits·get_quote·get_orderbook 으로 계좌·한도·호가를 확인하고, 위 종목은 그 방향으로 주문하세요. "
               f"무게 기준을 넘긴 결정이라 수량·가격은 정하되 관망(hold)은 한도·현금·호가·찬성 의견의 가격 조건 때문에 주문이 불가능할 때만 그 이유와 함께 고르세요. "
               f"주문은 place_order 로 종목당 한 번(오늘 남은 {orders_left}건, 같은 종목·방향은 {COOLDOWN_MIN}분에 한 번). "
-            + (agents.SELL_SIZING + " " if any(x["direction"] == "sell" for x in gate["aligned"]) else "")
+            + agents.ORDER_STYLE + " " + (agents.SELL_SIZING + " " if any(x["direction"] == "sell" for x in gate["aligned"]) else "")
             + f"운용 목표(주식 비중·종목 비중·손실 한도)를 지키세요. 마지막에 decisions·rationale 을 JSON 으로 — "
               "rationale 에는 이번에 내는 주문(없으면 관망 이유)만, 앞서 낸 주문은 다시 적지 마세요.")
 

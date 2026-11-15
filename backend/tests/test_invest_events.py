@@ -165,7 +165,7 @@ def test_figure_tags_and_related(conn, monkeypatch):
     assert [(i["kind"], i["related"]) for i in f["items"]] == [("statement", ["000660"]), ("scandal", ["000660"]),
                                                                ("rumor", ["000660", "005930"])]   # 오래된 기사는 뺀다
     assert news.recent(conn, market=True) == []                                        # 시장 뉴스와 섞이지 않는다
-    hit = figures.for_symbol(conn, "005930", "삼성전자")
+    hit = figures.for_symbol(conn, "005930", "삼성전자", days=3650)                    # 기사 날짜가 고정이라 오늘과 상관없이
     assert [(p["name"], [i["kind"] for i in p["items"]]) for p in hit] == [("젠슨 황", ["rumor"])]
 
 
