@@ -119,7 +119,7 @@ class FakeBroker:
     @staticmethod
     def _view(o: dict) -> dict:
         return {"orderId": o["id"], "symbol": o["symbol"], "status": o["status"], "side": o["side"], "orderType": o["type"],
-                "currency": "KRW",
+                "currency": "KRW", "quantity": str(o["quantity"]), "price": str(o["price"]) if o.get("price") else None,
                 "execution": {"filledQuantity": str(o["filled"]), "averageFilledPrice": str(o["avg"]) if o["avg"] else None,
                               "filledAt": "2026-10-13T11:30:05+09:00" if o["status"] == "FILLED" else None}}
 

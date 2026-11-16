@@ -455,6 +455,47 @@ def cancel(conn: sqlite3.Connection, order_id: int, market=None) -> dict:
     return get_order(conn, order_id)
 
 
+def open_broker_orders(conn: sqlite3.Connection, acct: TossAccount, symbols: list[str] | None = None) -> list[dict]:
+    """토스에 걸려 있는(미체결 · 일부 체결) 주문 — 앱 밖에서 낸 것도. 판매 가능 수량이 보유보다 적은 이유를 보여 줄 때 쓴다.
+    못 받으면 []."""
+    try:
+        rows = acct.client.orders("OPEN")
+    except TossError:
+        return []
+    ours = {r[0]: (r[1], r[2]) for r in conn.execute(
+        "SELECT broker_order_id, id, source FROM invest_orders WHERE broker_order_id IS NOT NULL AND status IN ('open', 'partial')")}
+    out = []
+    for o in rows:
+        sym = str(o.get("symbol") or "")
+        if symbols is not None and sym not in symbols:
+            continue
+        q = num(o.get("quantity")) or 0
+        filled = num((o.get("execution") or {}).get("filledQuantity")) or 0
+        app_id, source = ours.get(str(o.get("orderId")), (None, None))
+        out.append({"symbol": sym, "side": str(o.get("side") or "").lower(), "order_type": str(o.get("orderType") or "").lower(),
+                    "quantity": q, "filled": filled, "remaining": max(0.0, q - filled), "price": num(o.get("price")),
+                    "status": o.get("status"), "ordered_at": o.get("orderedAt"), "order_id": app_id,
+                    "placed_by": {"agent": "에이전트", "manual": "앱에서 직접"}.get(source, "앱 밖(토스 앱 등)")})
+    return out
+
+
+def sellable_gaps(holdings: dict[str, float], sellable: dict[str, float], open_orders: list[dict]) -> dict[str, dict]:
+    """보유 수량보다 판매 가능 수량이 적은 종목 → 차이와 이유 (미체결 매도 주문이 잡고 있는 수량)."""
+    out = {}
+    for sym, held in holdings.items():
+        can = sellable.get(sym)
+        if can is None or can + 1e-9 >= held:
+            continue
+        locked = sum(o["remaining"] for o in open_orders if o["symbol"] == sym and o["side"] == "sell")
+        gap = held - can
+        why = (f"미체결 매도 주문이 {locked:g}주를 잡고 있음" if abs(locked - gap) < 1e-9 else
+               f"미체결 매도 {locked:g}주로 {gap - locked:g}주가 설명되지 않음 — 토스 앱에서 확인 필요" if locked else
+               "미체결 매도 주문이 없는데 적음 — 토스 앱에서 확인 필요")
+        out[sym] = {"held": held, "sellable": can, "gap": gap, "locked_by_open_sells": locked, "why": why,
+                    "open_orders": [o for o in open_orders if o["symbol"] == sym]}
+    return out
+
+
 def cancel_open_agent_orders(conn: sqlite3.Connection, market=None) -> list[dict]:
     """오늘 체결 안 된 에이전트 주문(제출됨 · 일부 체결)을 모두 취소한다 — 자동 주문 시간이 끝나면(마감 동시호가 전) 운용이 부른다.
     취소에 실패한 주문은 error 에 남기고 넘어간다. → 취소를 시도한 주문들(최신 상태)"""

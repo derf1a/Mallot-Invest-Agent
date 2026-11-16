@@ -57,3 +57,23 @@ def test_cost_rules_reach_every_agent():
     text = agents.cost_rules()
     assert "0.23%" in text and "비용 빼면" in text
     assert "trading_costs" not in text                                                   # 도구 결과와 프롬프트는 따로
+
+
+def test_sellable_gap_explained_by_open_sell(conn, broker):
+    """판매 가능 수량이 보유보다 적으면 미체결 매도 주문이 잡고 있는 수량으로 설명한다 (#30)."""
+    m = SampleMarket()
+    broker.positions["005930"] = {"quantity": 10.0, "cost": 700_000.0}
+    broker.positions["105560"] = {"quantity": 1_000.0, "cost": 1e8}
+    high = snap_tick(m.quotes(["005930"])["005930"]["price"] * 1.2, "sell")
+    order = trading.place_order(conn, symbol="005930", side="sell", order_type="limit", price=high, quantity=3,
+                                confirm_live=True, market=m)
+    assert order["status"] == "open"                                                    # 높게 걸어 둬 체결 안 됨
+    acct = trading.account(conn, market=m)
+    opened = trading.open_broker_orders(conn, acct)
+    assert [(o["symbol"], o["side"], o["remaining"], o["order_id"], o["placed_by"]) for o in opened] == \
+        [("005930", "sell", 3.0, order["id"], "앱에서 직접")]
+    gaps = trading.sellable_gaps({"005930": 10.0, "105560": 1_000.0}, {"005930": acct.sellable("005930"), "105560": 1_000.0}, opened)
+    assert list(gaps) == ["005930"]
+    g = gaps["005930"]
+    assert (g["held"], g["sellable"], g["gap"], g["locked_by_open_sells"]) == (10.0, 7.0, 3.0, 3.0) and "3주를 잡고" in g["why"]
+    assert "설명되지 않음" in trading.sellable_gaps({"005930": 10.0}, {"005930": 5.0}, opened)["005930"]["why"]

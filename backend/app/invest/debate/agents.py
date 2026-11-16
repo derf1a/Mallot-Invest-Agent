@@ -175,7 +175,7 @@ TOOL_INFO: dict[str, dict] = {
     "get_portfolio": {"title": "내 투자현황", "desc": "내 전체 자산 — 토스 실계좌 보유(국내·해외), 원화·달러 예수금, 다른 계좌 보유(수기), "
                                                   "종목별 비중·손익률, 현금 비중, 집중도(상위 1·3종목, HHI), 후보 종목 보유 비중.",
                       "schema": {"type": "object", "properties": {}}},
-    "get_trading_limits": {"title": "주문 한도", "desc": "건당·하루 한도, 오늘 사용액, 매수 가능 금액, 후보 종목별 판매 가능 수량, 종목 비중 한도, "
+    "get_trading_limits": {"title": "주문 한도", "desc": "건당·하루 한도, 오늘 사용액, 매수 가능 금액, 후보 종목별 판매 가능 수량(보유보다 적으면 이유 · 미체결 주문), 종목 비중 한도, "
                                                      "매매 비용(수수료·거래세·왕복 비용).",
                            "schema": {"type": "object", "properties": {}}},
     "get_risk_limits": {"title": "비중 한도", "desc": "지금 쓰는 비중 한도 — 종목당 최대 비중, 섹터 기본 한도, 섹터별 한도, 보유의 섹터별 비중, "
@@ -384,11 +384,17 @@ def _handlers(s: Session, agent_key: str = "") -> dict[str, Callable[[dict], Awa
         risk = config.risk_limits(s.conn)
         lim = {**config.limits(s.conn), "max_position_pct": risk["max_position_pct"],  # 지금 쓰는 값 (에이전트가 정했으면 그 값)
                "default_sector_pct": risk["default_sector_pct"], "sector_limits": risk["sectors"]}
-        held = [h["symbol"] for h in acct.summary()["holdings"] if h.get("currency") in (None, "KRW")]  # 볼 종목에 없는 보유도 판매 가능 수량을 본다
+        held_qty = {h["symbol"]: h["quantity"] for h in acct.summary()["holdings"] if h.get("currency") in (None, "KRW")}
+        held = list(held_qty)  # 볼 종목에 없는 보유도 판매 가능 수량을 본다
         sellable = {**{c["symbol"]: 0.0 for c in s.candidates}, **{sym: acct.sellable(sym) for sym in held}}
+        open_orders = trading.open_broker_orders(s.conn, acct, sorted(set(held) | set(s.symbols)))
+        gaps = trading.sellable_gaps(held_qty, sellable, open_orders)  # 판매 가능 < 보유 — 왜 적은지 (#30)
         return {"halted": config.halted(s.conn), **lim, "position_limit_basis": "평가액 × |레버리지 배수| (일반 종목은 평가액)",
                 "used_today_krw": round(trading._today_amount(s.conn)),
                 "buying_power": round(acct.buying_power()), "sellable_quantity": sellable,
+                "held_quantity": held_qty, "sellable_gaps": gaps,
+                "open_orders": open_orders,  # 토스에 걸려 있는 미체결 주문 (이전 세션 · 앱 밖 주문 포함)
+                "open_orders_note": "판매 가능 수량 = 보유 − 미체결 매도. orders_this_session 은 이번 세션에서 낸 것만 셉니다",
                 "orders_this_session": len(s.orders), "max_orders_this_session": s.max_orders,
                 "orders_left_this_session": max(0, s.max_orders - len(s.orders)), **order_guard.day_status(s.conn),
                 "order_count_note": "세션 건수는 이번 회의 · 대화에서 낼 수 있는 수, agent_orders_*_today 는 오늘 하루 에이전트 주문(상시 운용의 하루 한도)",
