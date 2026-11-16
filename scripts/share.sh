@@ -2,6 +2,7 @@
 # 인터넷에 열어 띄우기: 프론트 빌드 → 백엔드(127.0.0.1:8100, 로그인 필수) → Cloudflare 터널.
 #   ~/.cloudflared/mallot-invest.yml 이 있으면 내 도메인(named tunnel — scripts/tunnel-setup.sh 로 만든다),
 #   없으면 임시 주소(Quick Tunnel, https://…trycloudflare.com — 다시 켜면 바뀐다).
+#   SHARE_TUNNEL=0 이면 서버만 띄운다 — 터널은 바깥(mallot-home 의 mallot-tunnel)이 맡을 때.
 # 끄기: Ctrl+C (백엔드 · 터널을 같이 끈다). 기록: data/share.log, 지금 주소: data/share-url.txt
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -31,7 +32,9 @@ pids+=($!)
 for _ in $(seq 1 60); do curl -fsS "http://127.0.0.1:$PORT/api/health" >/dev/null 2>&1 && break; sleep 1; done
 echo "[share] 서버 http://127.0.0.1:$PORT (로그인 필수)"
 
-if [ -f "$CONF" ]; then
+if [ "${SHARE_TUNNEL:-1}" = "0" ]; then
+  echo "[share] 터널 없이 서버만 (SHARE_TUNNEL=0)"
+elif [ -f "$CONF" ]; then
   host=$(awk '/hostname:/ {print $NF; exit}' "$CONF")
   echo "https://$host" > "$ROOT/data/share-url.txt"
   echo "[share] 내 도메인 https://$host"
