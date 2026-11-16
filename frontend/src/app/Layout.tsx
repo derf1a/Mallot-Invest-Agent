@@ -4,6 +4,7 @@ import { investApi } from '../features/invest/api'
 import { systemApi } from '../features/settings/api'
 import { otherAppUrl } from '../shared/otherApp'
 import { useLoad } from '../shared/useLoad'
+import AccessAlerts from './AccessAlerts'
 import BrandMark from './BrandMark'
 import { AgentsIcon, AiIcon, GraphIcon, InvestIcon, PortfolioIcon, SettingsIcon, TeamIcon, TraceIcon, TradesIcon } from './NavIcons'
 
@@ -155,6 +156,7 @@ export default function Layout({ onLogout, viewer }: { onLogout?: () => void; vi
       </nav>
 
       <main className="content">
+        {!viewer && <AccessAlerts />}
         <Outlet />
       </main>
     </div>
