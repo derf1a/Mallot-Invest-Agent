@@ -5,6 +5,7 @@
   손님(공유 링크)은 관리자 화면을 읽기만 한다 — GET 은 열고, 쓰기(POST · PUT · DELETE)는 모두 403.
   손님에게도 닫는 GET: 공유 링크 · 키(/api/auth/share), /docs. 설정의 키 값은 라우터가 빼고 보낸다 (core/access.is_viewer).
 - 쓰기 요청(POST · PUT · DELETE)은 Origin 이 있으면 이 사이트여야 한다 (다른 사이트에서 몰래 보내는 요청 막기).
+- Mallot 홈 서버는 열쇠(MIA_FEED_TOKEN)로 /api/feed/* 만 읽는다 (system/feed.token_ok).
 - 역할은 request.state.role 에 넣는다 (라우터가 손님용으로 값을 줄일 때).
 """
 
@@ -14,6 +15,7 @@ from fastapi import Request
 from fastapi.responses import JSONResponse
 
 from app.auth import security
+from app.system.feed import token_ok
 
 OPEN_API = {"/api/health", "/api/auth/login", "/api/auth/logout", "/api/auth/me", "/api/auth/share/enter"}
 DOC_PATHS = ("/docs", "/redoc", "/openapi.json")
@@ -37,6 +39,9 @@ async def guard(request: Request, call_next):
     path = request.url.path
     guarded = path.startswith("/api/") or path.startswith(DOC_PATHS)
     if not guarded:
+        return await call_next(request)
+    if token_ok(request.headers, request.method, path, security.proxied(request.headers)):
+        request.state.role = "feed"  # Mallot 홈 서버 (이 컴퓨터 안, 열쇠 · GET /api/feed/* 만)
         return await call_next(request)
     if not security.enabled():
         if security.proxied(request.headers):
