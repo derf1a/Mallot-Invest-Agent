@@ -67,3 +67,13 @@
 .llm-mem span { min-width: 3px; }
 .llm-kv { margin-top: 12px; }
 .llm-test { margin-top: 12px; padding: 10px 12px; border-radius: 8px; background: var(--surface); }
+
+/* 접속 기록 · 한국 밖 경보 띠 */
+.access-banner { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; margin: 0 0 14px; padding: 10px 14px; border-radius: 10px;
+  background: var(--danger-soft); color: var(--neg); border: 1px solid color-mix(in srgb, var(--neg) 35%, transparent); }
+.access-banner a { margin-left: auto; }
+.access-alert-card { border-color: color-mix(in srgb, var(--neg) 45%, var(--border)); }
+.access-foreign td { background: var(--danger-soft); }
+.access-days { justify-content: flex-start; flex-wrap: wrap; }
+.table-scroll { overflow-x: auto; }
+.warn-chip { background: var(--warn-soft); color: var(--warn); }

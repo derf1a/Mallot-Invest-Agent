@@ -336,4 +336,42 @@ MIGRATIONS: list[str] = [
         fetched_at TEXT NOT NULL                     -- 마지막으로 공시 목록을 받은 시각 (캐시)
     );
     """,
+    # v6 (접속 기록): IP 마다 하루 묶음 · 로그인 사건 · 한국 밖 접속 경보 (app/auth/access_log.py)
+    """
+    CREATE TABLE access_ips (
+        day        TEXT    NOT NULL,
+        ip         TEXT    NOT NULL,                -- CF-Connecting-IP, 터널 밖이면 local
+        country    TEXT,                            -- CF-IPCountry (KR · US · XX 알 수 없음 · T1 Tor)
+        roles      TEXT    NOT NULL DEFAULT '',     -- 그날 그 IP 의 역할들 (admin · viewer · none)
+        requests   INTEGER NOT NULL DEFAULT 0,
+        denied     INTEGER NOT NULL DEFAULT 0,      -- 401 · 403 · 429
+        first_at   TEXT    NOT NULL,
+        last_at    TEXT    NOT NULL,
+        last_path  TEXT    NOT NULL DEFAULT '',
+        user_agent TEXT    NOT NULL DEFAULT '',
+        PRIMARY KEY (day, ip)
+    );
+    CREATE TABLE access_events (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        day        TEXT    NOT NULL,
+        at         TEXT    NOT NULL,
+        ip         TEXT    NOT NULL,
+        country    TEXT,
+        kind       TEXT    NOT NULL,                -- login · share_enter · logout
+        ok         INTEGER NOT NULL,
+        note       TEXT    NOT NULL DEFAULT '',
+        user_agent TEXT    NOT NULL DEFAULT ''
+    );
+    CREATE INDEX idx_access_events_day ON access_events (day);
+    CREATE TABLE access_alerts (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        day        TEXT    NOT NULL,
+        ip         TEXT    NOT NULL,
+        country    TEXT,
+        reason     TEXT    NOT NULL DEFAULT '',
+        created_at TEXT    NOT NULL DEFAULT (datetime('now', 'localtime')),
+        acked_at   TEXT,                            -- 관리자가 '확인' 누른 때
+        UNIQUE (day, ip)
+    );
+    """,
 ]

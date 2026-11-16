@@ -11,6 +11,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app import registry
+from app.auth import access_log
 from app.auth.guard import guard
 from app.core import envfile, metrics, trace
 from app.core.db import connect, init_db
@@ -43,6 +44,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(title="Mallot Invest Agent", lifespan=lifespan)
 app.middleware("http")(guard)  # 역할 검사 — 관리자 API 는 관리자만, 손님은 /api/share/* 만 (app/auth)
+app.middleware("http")(access_log.middleware)  # 접속 기록 · 한국 밖 경보 — 맨 바깥, 거절된 요청까지 남긴다
 
 
 @app.middleware("http")
