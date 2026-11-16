@@ -530,3 +530,18 @@ def test_move_text_separates_since_talk_and_today():
     fake = SimpleNamespace(p=p, names={"005930": "삼성전자"})
     text = st.Stream._move_text(fake, "005930", prev * 1.05, prev * 0.97, "2026-11-13T15:00:12+09:00")
     assert text.startswith("삼성전자 지난 대화 뒤 -7.6%") and "오늘(전일 대비) -3.0%" in text and text.endswith("15:00:12 기준")
+
+
+def test_board_drops_stance_left_out_of_a_later_statement():
+    """다룬 종목인데 views 에서 빠지면 이전 입장을 지운다 — 옛 '매수'가 남아 안건이 되지 않게 (#28). 응답 실패는 그대로 둔다."""
+    from app.invest.debate.stream import Board
+
+    b, now = Board(), at("10:00")
+    b.update({"agent": "pm", "title": "포트폴리오 매니저", "views": [{"symbol": "316140", "stance": "buy", "confidence": 0.7}]}, now)
+    assert b.stance("pm", "316140", now) == "buy"
+    b.update({"agent": "pm", "title": "포트폴리오 매니저", "error": "timeout",
+              "views": [{"symbol": "316140", "stance": "none", "confidence": 0.0, "implicit": True}]}, now)
+    assert b.stance("pm", "316140", now) == "buy"                                     # 실패는 지우지 않는다
+    b.update({"agent": "pm", "title": "포트폴리오 매니저",
+              "views": [{"symbol": "316140", "stance": "none", "confidence": 0.0, "implicit": True}]}, now)
+    assert b.stance("pm", "316140", now) is None and b.fresh("316140", now) == []

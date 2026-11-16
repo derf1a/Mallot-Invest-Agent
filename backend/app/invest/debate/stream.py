@@ -87,10 +87,14 @@ class Board:
     skill: dict[str, float] = field(default_factory=dict)
 
     def update(self, st: dict, now: datetime) -> None:
+        """발언의 입장을 올린다. 이번 대화에서 다룬 종목인데 views 에 빠졌으면(implicit) 그 에이전트의 이전 입장을 지운다 —
+        말로는 '더 사지 말자'인데 입장판에 옛 '매수'가 남아 안건이 되지 않게 (#28). 응답 실패는 아무것도 바꾸지 않는다."""
         if st.get("error") or st.get("executor"):
             return
         for v in st.get("views") or []:
-            if not v.get("implicit"):
+            if v.get("implicit"):
+                self.views.get(st["agent"], {}).pop(v["symbol"], None)
+            else:
                 self.views.setdefault(st["agent"], {})[v["symbol"]] = {
                     "stance": v["stance"], "confidence": v["confidence"], "weight": track.weight(v["confidence"], self.skill.get(st["agent"], 1.0)),
                     "reason": v.get("reason") or "", "at": now, "title": st["title"], "quantity": v.get("quantity")}
@@ -223,7 +227,8 @@ def stream_prompt(s: agents.Session, rnd: int, trig: dict, recent: list[dict], b
     return (f"라운드 {rnd} — 상시 운용 채널의 대화입니다 (정기 회의 없이 계속 이야기해요). 계기: {trig['text']}\n"
             f"볼 종목:\n{agents._candidates_text(s)}\n" + order_guard.orders_text(s.conn, s.symbols) + agents._notes_text(s)
             + f"\n지금 입장판 (최근 {STALE_MIN}분, 에이전트별 최신 입장):\n{board}\n{_answers_text(list(answers))}\n최근 대화:\n{talk}\n\n"
-              "할 일: 계기와 관련된 자료를 도구로 확인하고, 볼 종목마다 매수(buy)/매도(sell)/의견 없음(none)과 이유를 views 에 내세요. 지금 사거나 팔 이유가 보이면 "
+              "할 일: 계기와 관련된 자료를 도구로 확인하고, 볼 종목마다 매수(buy)/매도(sell)/의견 없음(none)과 이유를 views 에 내세요 "
+              "(views 에서 빠진 종목은 입장판의 내 이전 입장이 지워집니다 — 말로 입장을 바꿨으면 views 에도 그대로). 지금 사거나 팔 이유가 보이면 "
               "조건을 달아 미루지 말고 buy·sell 로 내세요 — none 은 정말 움직일 이유가 없을 때만. " + agents._exit_ask(s)
             + "confidence 는 표의 무게입니다: 0.3 약함·0.5 보통·0.7 강함·0.9 매우 강함. "
               "지난 판단의 성과도 무게에 곱해지니 근거만큼만 강하게 내세요. "
