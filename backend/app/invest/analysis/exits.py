@@ -3,7 +3,7 @@
 토론(정기 회의·상시 운용·수동 토론)의 후보에 보유 종목이 있으면 이 점검이 그 종목 줄 아래 '매도 점검: …'으로 붙고,
 분석 에이전트의 시스템 프롬프트(agents.EXIT_RULES)가 보유 종목마다 매도 타이밍을 따지게 한다 — 지금 팔지(전량·일부) /
 계속 들고 갈지(그러면 언제 팔지: 손절가·목표가·조건).
-- 사실: 평단·현재가·평가 손익률·계좌 비중, 5일·20일 등락, RSI, 20일선 대비, 60일 고점 대비 (일봉 지표는 screening.metrics)
+- 사실: 평단·현재가·평가 손익률(과 수수료 · 거래세를 뺀 손익률 · 본전 매도가 — fees.py)·계좌 비중, 5일·20일 등락, RSI, 20일선 대비, 60일 고점 대비 (일봉 지표는 screening.metrics)
 - 신호(flags): 손실 LOSS_FLAG 이하 · 평가익 GAIN_FLAG 이상 · 60일 고점 대비 DRAWDOWN_FLAG 이하 · 20일선 아래 · 이동평균 역배열 ·
   RSI HOT_RSI 이상 · 비중이 종목당 한도(주문 한도와 운용 목표 중 낮은 쪽) 초과
 신호는 '팔아라'가 아니라 '이것을 따져 보라'는 표시 — 신호가 없어도 보유 종목의 매도 판단은 한다.
@@ -16,7 +16,7 @@ from collections.abc import Iterable
 from concurrent.futures import ThreadPoolExecutor
 
 from app.invest.analysis import policy, screening
-from app.invest.broker import config, trading
+from app.invest.broker import config, fees, trading
 from app.invest.broker.toss import TossError
 from app.invest.broker.trading import TradeError
 from app.invest.marketdata.market import MarketError
@@ -44,8 +44,9 @@ def position_limit(conn: sqlite3.Connection) -> float:
     return min(lim, goal) if goal else lim
 
 
-def check(h: dict, m: dict | None, limit_pct: float | None = None) -> dict:
-    """보유 한 줄(trading 계좌 요약의 holdings) + 일봉 지표(screening.metrics, 없으면 None) → 사실과 신호."""
+def check(h: dict, m: dict | None, limit_pct: float | None = None, security_type: str | None = None) -> dict:
+    """보유 한 줄(trading 계좌 요약의 holdings) + 일봉 지표(screening.metrics, 없으면 None) → 사실과 신호.
+    security_type(ETF · ETN 은 거래세 없음)으로 비용 뺀 손익률 · 본전 매도가를 낸다 — 모르면 주식으로."""
     m = m or {}
     price = h.get("last_price") or m.get("price")
     ma20 = m.get("ma20")
@@ -67,8 +68,10 @@ def check(h: dict, m: dict | None, limit_pct: float | None = None) -> dict:
         flags.append({"key": "hot", "text": f"RSI {rsi:.0f} 과열"})
     if limit_pct and weight is not None and weight * 100 > limit_pct:
         flags.append({"key": "weight", "text": f"비중 {weight * 100:.1f}% > 한도 {limit_pct:g}%"})
-    return {"symbol": h["symbol"], "name": h.get("name") or h["symbol"], "quantity": h.get("quantity"), "avg_price": h.get("avg_price"),
-            "price": price, "pnl_rate": pnl, "weight": weight, "change_5d": m.get("change_5d"), "change_20d": m.get("change_20d"),
+    avg = h.get("avg_price")
+    return {"symbol": h["symbol"], "name": h.get("name") or h["symbol"], "quantity": h.get("quantity"), "avg_price": avg,
+            "price": price, "pnl_rate": pnl, "net_pnl_rate": fees.net_pnl_rate(avg, price, security_type) if avg and price else None,
+            "breakeven": round(fees.breakeven_price(avg, security_type)) if avg else None, "weight": weight, "change_5d": m.get("change_5d"), "change_20d": m.get("change_20d"),
             "rsi": rsi, "ma20_gap": gap, "drawdown": dd, "flags": flags}
 
 
@@ -93,7 +96,8 @@ def checks(conn: sqlite3.Connection, p, holdings: list[dict], symbols: Iterable[
     with ThreadPoolExecutor(WORKERS) as ex:
         got = dict(zip(todo, ex.map(lambda s: screening.metrics(p, s), todo)))
     limit = position_limit(conn)
-    return {h["symbol"]: check(h, metrics.get(h["symbol"]) or got.get(h["symbol"]), limit) for h in rows}
+    kinds = fees.security_types(conn, [h["symbol"] for h in rows])
+    return {h["symbol"]: check(h, metrics.get(h["symbol"]) or got.get(h["symbol"]), limit, kinds.get(h["symbol"])) for h in rows}
 
 
 def for_candidates(conn: sqlite3.Connection, p, candidates: list[dict]) -> dict[str, dict]:
@@ -116,7 +120,8 @@ def line(c: dict) -> str:
     """에이전트 프롬프트의 후보 줄 아래 '매도 점검: …'."""
     bits = []
     if c.get("avg_price") and c.get("price"):
-        bits.append(f"평단 {c['avg_price']:,.0f}원 → 지금 {c['price']:,.0f}원 ({_pct(c['pnl_rate'])})")
+        net = f", 비용 빼면 {_pct(c['net_pnl_rate'])} · 본전 {c['breakeven']:,.0f}원" if c.get("net_pnl_rate") is not None else ""
+        bits.append(f"평단 {c['avg_price']:,.0f}원 → 지금 {c['price']:,.0f}원 ({_pct(c['pnl_rate'])}{net})")
     elif c.get("price"):
         bits.append(f"지금 {c['price']:,.0f}원 (평단 모름)")
     if c.get("weight") is not None:
