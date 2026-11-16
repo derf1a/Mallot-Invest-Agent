@@ -15,6 +15,7 @@ from datetime import date, datetime, timedelta
 
 from app.invest.marketdata import market
 
+
 MAX_DAY_ORDERS = 6        # 상시 운용이 하루에 내는 자동 주문 최대 (오늘 에이전트 주문, 거절 빼고)
 DUP_MIN = 30              # 같은 실행 · 종목 · 방향의 주문은 이만큼 안에 다시 내지 않는다
 LIVE = ("pending_approval", "open", "partial")
@@ -73,7 +74,7 @@ def duplicate(conn: sqlite3.Connection, run_id: int | None, symbol: str, side: s
     """같은 실행 · 종목 · 방향의 앞 주문이 아직 살아 있거나(승인 대기 · 미체결) DUP_MIN 분 안이면 거절 사유."""
     if run_id is None:
         return None
-    now = (now or market.now_kst()).replace(tzinfo=None)
+    now = (now or market.now_kst()).astimezone().replace(tzinfo=None)  # DB 의 created_at 과 같은 서버 현지 시각으로 — UTC 서버에서도 맞게
     for r in conn.execute("SELECT id, created_at, quantity, status FROM invest_orders WHERE run_id = ? AND symbol = ? AND side = ? "
                           "AND status != 'rejected' ORDER BY id DESC", (run_id, symbol, side)).fetchall():
         what = f"앞 주문 #{r['id']}({str(r['created_at'])[11:16]} · {r['quantity']:g}주)"
