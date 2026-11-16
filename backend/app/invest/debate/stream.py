@@ -426,9 +426,23 @@ class Stream:
             base = self.prices.setdefault(sym, price)
             if abs(price / base - 1) >= MOVE:
                 self.prices[sym] = price
-                return {"kind": "move", "text": f"{self.names.get(sym, sym)} {price / base - 1:+.1%} ({base:,.0f}원 → {price:,.0f}원, 지난번 이야기한 뒤)",
+                return {"kind": "move", "text": self._move_text(sym, base, price, (quotes.get(sym) or {}).get("timestamp")),
                         "symbols": [sym]}
         return None
+
+    def _move_text(self, sym: str, base: float, price: float, at: str | None) -> str:
+        """급변 계기 문구 — '지난 대화 뒤' 변화와 오늘(전일 종가 대비) 등락을 나눠 적고 기준 시각을 붙인다. 둘을 한 숫자로 적으면
+        get_quote 의 전일 대비 등락과 방향까지 달라 보인다 (#31)."""
+        day = None
+        try:
+            daily = self.p.candles(sym, "1d", 3)
+            prev = daily[-2]["c"] if len(daily) >= 2 else None
+            day = price / prev - 1 if prev else None
+        except (MarketError, TossError):
+            pass
+        when = (at or "")[11:19] or market.now_kst().strftime("%H:%M:%S")
+        return (f"{self.names.get(sym, sym)} 지난 대화 뒤 {price / base - 1:+.1%} ({base:,.0f}원 → {price:,.0f}원)"
+                + (f" · 오늘(전일 대비) {day:+.1%}" if day is not None else "") + f" · {when} 기준")
 
     def _exit_signals(self, now: datetime) -> dict | None:
         """보유 종목에 새 매도 점검 신호가 뜨면 그 종목들로 대화 — EXIT_CHECK_MIN 분마다 재고, (종목, 신호)마다 하루 한 번."""

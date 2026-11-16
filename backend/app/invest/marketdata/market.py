@@ -737,6 +737,7 @@ def snapshot(p: SampleMarket | TossMarket, symbol: str) -> dict:
         "price": price,
         "currency": currency,
         "prev_close": prev,
+        "as_of": quote.get("timestamp"),  # 현재가 기준 시각 — 도구마다 부른 때가 달라 값이 조금씩 다를 수 있다
         "change": (price - prev) if price is not None and prev else None,
         "change_rate": (price / prev - 1) if price and prev else None,
         "open": today.get("o"), "open_basis": OPEN_BASIS, "high": today.get("h"), "low": today.get("l"), "volume": today.get("v"),

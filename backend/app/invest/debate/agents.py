@@ -228,7 +228,7 @@ def _handlers(s: Session, agent_key: str = "") -> dict[str, Callable[[dict], Awa
 
     async def get_quote(a: dict) -> dict:
         snap = market.snapshot(p, pick(a))
-        keys = ("symbol", "name", "price", "currency", "prev_close", "change_rate", "open", "open_basis", "high", "low",
+        keys = ("symbol", "name", "price", "as_of", "currency", "prev_close", "change_rate", "open", "open_basis", "high", "low",
                 "volume", "avg_volume_20", "range_high", "range_low", "range_bars", "upper_limit", "lower_limit", "tick")
         return {**{k: snap.get(k) for k in keys}, "data_source": _source(p)}
 
@@ -312,7 +312,8 @@ def _handlers(s: Session, agent_key: str = "") -> dict[str, Callable[[dict], Awa
                 prev = cs[-2]["c"] if len(cs) >= 2 else None
                 last = (quotes.get(c["symbol"]) or {}).get("price") or summ.get("last_close")
                 rows.append({"symbol": c["symbol"], "name": c["name"], "type": c.get("security_type") or "",
-                             "price": last, "change_rate": _r(last / prev - 1, 4) if last and prev else None,
+                             "price": last, "as_of": (quotes.get(c["symbol"]) or {}).get("timestamp"),
+                             "change_rate": _r(last / prev - 1, 4) if last and prev else None,
                              "return_5d": summ.get("return_5d"), "return_20d": summ.get("return_20d"),
                              "return_60d": summ.get("return_60d"), "rsi14": summ.get("rsi14"),
                              "volatility_20d": summ.get("volatility_20d_annualized"), "held_quantity": c.get("held", 0)})

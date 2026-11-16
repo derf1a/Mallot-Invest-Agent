@@ -225,11 +225,13 @@ def test_focus_rotates_to_symbols_not_discussed_lately(client, conn, broker, at_
 
 def test_move_trigger_says_which_prices(client, conn, broker, at_open):  # noqa: F811
     prices = {"p": 100_000}
-    p = SimpleNamespace(quotes=lambda syms: {s_: {"price": prices["p"]} for s_ in syms})
+    p = SimpleNamespace(quotes=lambda syms: {s_: {"price": prices["p"], "timestamp": "2026-10-13T11:30:05+09:00"} for s_ in syms},
+                        candles=lambda sym, interval, count: [{"t": "2026-10-12", "c": 105_000}, {"t": "2026-10-13", "c": prices["p"]}])
     st = _bare_stream(conn, p, ["005930"])
     assert st._moved() is None
     prices["p"] = 102_500
-    assert "+2.5% (100,000원 → 102,500원," in st._moved()["text"]
+    text = st._moved()["text"]
+    assert "지난 대화 뒤 +2.5% (100,000원 → 102,500원)" in text and "오늘(전일 대비) -2.4%" in text and "11:30:05 기준" in text
 
 
 def test_minutes_keep_the_gate_at_order_time(client, conn, broker, monkeypatch):  # noqa: F811
@@ -513,3 +515,18 @@ def test_resume_route_needs_no_pin_but_checks_the_window(client, conn, broker, m
     _continuous(conn, broker, monkeypatch, "08:00")
     r = client.post("/api/invest/autopilot/resume")
     assert r.status_code == 409 and "자동 판단 시간" in r.json()["detail"]
+
+
+def test_move_text_separates_since_talk_and_today():
+    """급변 계기 문구 — '지난 대화 뒤' 변화와 오늘 등락을 나눠 적고 기준 시각을 붙인다 (#31)."""
+    from types import SimpleNamespace
+
+    from app.invest.debate import stream as st
+    from app.invest.marketdata.market import SampleMarket
+
+    p = SampleMarket()
+    daily = p.candles("005930", "1d", 3)
+    prev = daily[-2]["c"]
+    fake = SimpleNamespace(p=p, names={"005930": "삼성전자"})
+    text = st.Stream._move_text(fake, "005930", prev * 1.05, prev * 0.97, "2026-11-13T15:00:12+09:00")
+    assert text.startswith("삼성전자 지난 대화 뒤 -7.6%") and "오늘(전일 대비) -3.0%" in text and text.endswith("15:00:12 기준")
