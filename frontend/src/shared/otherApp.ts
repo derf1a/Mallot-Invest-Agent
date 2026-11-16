@@ -15,3 +15,9 @@ export function otherAppUrl(here: Location = window.location): string | null {
   return null
 }
 
+
+/** 맨 도메인의 Mallot 고르기 화면 (ledger.<도메인> → <도메인>). 하위 도메인이 아니면 null (링크를 숨긴다) */
+export function portalUrl(here: Location = window.location): string | null {
+  const [first, ...rest] = here.hostname.split('.')
+  return PAIR[first] && rest.length >= 2 ? `${here.protocol}//${rest.join('.')}/` : null
+}
