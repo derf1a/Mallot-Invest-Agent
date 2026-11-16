@@ -35,7 +35,7 @@ from datetime import date
 from typing import Any
 
 from app.invest.analysis import disclosures, exits, valuation
-from app.invest.broker import config, portfolio, trading
+from app.invest.broker import config, fees, portfolio, trading
 from app.invest.broker.toss import TossError
 from app.invest.broker.trading import TradeError
 from app.invest.marketdata import figures, indicators, market, news
@@ -171,7 +171,8 @@ TOOL_INFO: dict[str, dict] = {
     "get_portfolio": {"title": "내 투자현황", "desc": "내 전체 자산 — 토스 실계좌 보유(국내·해외), 원화·달러 예수금, 다른 계좌 보유(수기), "
                                                   "종목별 비중·손익률, 현금 비중, 집중도(상위 1·3종목, HHI), 후보 종목 보유 비중.",
                       "schema": {"type": "object", "properties": {}}},
-    "get_trading_limits": {"title": "주문 한도", "desc": "건당·하루 한도, 오늘 사용액, 매수 가능 금액, 후보 종목별 판매 가능 수량, 종목 비중 한도.",
+    "get_trading_limits": {"title": "주문 한도", "desc": "건당·하루 한도, 오늘 사용액, 매수 가능 금액, 후보 종목별 판매 가능 수량, 종목 비중 한도, "
+                                                     "매매 비용(수수료·거래세·왕복 비용).",
                            "schema": {"type": "object", "properties": {}}},
     EXECUTOR_TOOL: {"title": "주문 실행", "desc": "게이트가 열린 종목만 그 방향으로 주문한다. 종목당 1건, 세션당 최대 3건. "
                                                  "symbol, side=buy|sell, quantity=정수 주, order_type=market|limit. 지정가는 price(원) 또는 "
@@ -373,7 +374,7 @@ def _handlers(s: Session) -> dict[str, Callable[[dict], Awaitable[object]]]:
         return {"halted": config.halted(s.conn), **lim, "position_limit_basis": "평가액 × |레버리지 배수| (일반 종목은 평가액)",
                 "used_today_krw": round(trading._today_amount(s.conn)),
                 "buying_power": round(acct.buying_power()), "sellable_quantity": sellable,
-                "orders_this_session": len(s.orders), "max_orders_per_session": MAX_ORDERS,
+                "orders_this_session": len(s.orders), "max_orders_per_session": MAX_ORDERS, "trading_costs": fees.summary(),
                 "agent_order_needs_approval": not (s.auto_submit or config.agent_auto_approve(s.conn))}
 
     async def place_order(a: dict) -> dict:
@@ -706,6 +707,17 @@ EXIT_RULES = """[보유 종목 매도 타이밍 — 가진 종목은 매번 '지
 - 계속 들고 간다면(none 또는 buy) reason 에 언제 팔지 — 손절가·목표가 또는 조건(예: 종가로 20일선을 깨면) — 를 함께 쓰세요.
   보유 종목의 none 은 '근거 부족'이 아니라 '지금은 계속 보유'라는 뜻입니다.
 - '매도 점검' 줄은 코드가 계산한 사실이고 '신호'는 따져 볼 거리입니다. 신호가 있으면 반드시 다루되 신호만으로 팔지 말고 도구로 확인하세요."""
+def cost_rules() -> str:
+    """매매 비용 규칙 — 분석 에이전트 · 트레이더 프롬프트 (요율은 fees.py, .env 로 바뀔 수 있어 부를 때 만든다)."""
+    rt, rt_etf = fees.round_trip() * 100, fees.round_trip("ETF") * 100
+    return (f"[매매 비용 — 토스증권 실제 체결 기준] 수수료 매수·매도 {fees.commission_rate() * 100:.3f}%씩, 매도 거래세 주식 "
+            f"{fees.sell_tax_rate() * 100:.2f}%(국내 ETF·ETN 은 없음) — 사고 다시 팔면 주식 약 {rt:.2f}%, ETF 약 {rt_etf:.2f}%가 듭니다.\n"
+            f"- 새로 살 때: 기대 상승폭이 왕복 비용({rt:.2f}%)보다 넉넉히 크지 않으면 사지 마세요. 며칠 안에 되팔 단타일수록 비용 비중이 큽니다.\n"
+            "- 팔 때: 차익 실현은 '매도 점검'의 '비용 빼면' 손익률로 판단하세요 — 평가익이 있어도 비용을 빼면 손해일 수 있습니다. "
+            "본전가 바로 위에서 팔아 봐야 남는 게 거의 없습니다. 손절 · 추세 꺾임 · 비중 초과는 비용 때문에 미루지 마세요.\n"
+            "- 같은 종목을 짧은 간격으로 사고팔기(되돌리기)를 피하세요 — 매번 비용이 나갑니다.\n")
+
+
 ORDER_STYLE = ("가격: 급하지 않으면 호가 기준 지정가로 — place_order 에 order_type=limit, price_at=bid(매수 1호가)·ask(매도 1호가)·mid·last, "
                "ticks(호가 칸, + 위 · − 아래)를 주면 코드가 지금 호가에서 가격을 계산합니다. 매수는 bid(ticks 0~+1), 매도는 ask(ticks −1~0)에 "
                "걸어 체결을 기다리고, 손절·급변처럼 바로 체결해야 할 때만 상대 호가(매수 ask · 매도 bid)나 시장가. 자동 주문은 장 시작 30분 안에는 "
@@ -743,7 +755,7 @@ def system_prompt(agent: dict, s: Session) -> str:
     exit_rules = f"{EXIT_RULES}\n" if _held(s) and not agent["executor"] else ""
     return (f"당신은 '{agent['title']}' 에이전트입니다.{who} 토론 범위 '{s.label}'의 매매 토론에 참여합니다.\n"
             f"[후보 종목]\n{_candidates_text(s)}\n{_goal_text(s)}{desk}{s.system}[성향]\n{agent['persona']}\n[쓸 수 있는 도구]\n{tools}\n"
-            f"{exit_rules}{COMMON_RULES}\n- 참고: {GATE_RULE[s.gate_mode]}")
+            f"{exit_rules}{cost_rules()}{COMMON_RULES}\n- 참고: {GATE_RULE[s.gate_mode]}")
 
 
 def _goal_text(s: Session) -> str:

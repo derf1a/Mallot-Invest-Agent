@@ -26,7 +26,7 @@ def test_check_turns_facts_into_sell_signals():
     c = exits.check(H, M, 30)
     assert [f["key"] for f in c["flags"]] == ["loss", "drawdown", "ma20", "downtrend", "weight"]
     text = exits.line(c)
-    assert text.startswith("평단 100,000원 → 지금 90,000원 (-10.0%) · 계좌 비중 35.0%")
+    assert text.startswith("평단 100,000원 → 지금 90,000원 (-10.0%, 비용 빼면 -10.2% · 본전 100,230원) · 계좌 비중 35.0%")
     assert "20일선 대비 -5.3%" in text and "신호: 손실 -10.0%, 60일 고점 대비 -15.0%, 20일선 아래 -5.3%" in text
     assert exits.why(c).startswith("보유 — 매도 점검 · 손실 -10.0%") and "비중 35.0% > 한도 30%" in exits.why(c)
     hot = exits.check({**H, "last_price": 130_000, "pnl_rate": 0.3, "weight": 0.1}, {**M, "trend": 1, "drawdown": 0, "rsi": 75}, 30)

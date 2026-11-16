@@ -2,7 +2,7 @@
 
 모든 주문(수동·에이전트)은 place_order 를 지나며, 그 앞에서 코드가 검사한다:
   전체 중지 → 주문 조건(토스 키·PIN) → 수동 주문 확인 → 국내(원화) 종목만 → 수량·가격 형식 → 건당 한도 → 하루 한도
-  → 매수 가능 금액 / 판매 가능 수량 → 매수 후 종목 비중 한도.
+  → 매수 가능 금액(수수료 포함) / 판매 가능 수량 → 매수 후 종목 비중 한도. 검사 기록 끝에 예상 비용(수수료 · 거래세 — fees.py).
 승인 없이 바로 나가는 에이전트 주문(자동 운용)은 더: 자동 주문 시간(정규장 +5분 ~ 끝 −15분, 마감 동시호가 전) 안에서만,
 장 시작 30분 안에는 지정가만(market.auto_order_problem), 같은 종목에 체결 안 된 에이전트 주문이 있으면 새 주문을 내지 않는다.
 호가 기준 지정가: price_at(bid 매수 1호가 · ask 매도 1호가 · mid 가운데 · last 현재가) + ticks(호가 단위 칸, + 위 · − 아래)를 주면
@@ -16,7 +16,7 @@ import sqlite3
 import uuid
 from datetime import date
 
-from app.invest.broker import config
+from app.invest.broker import config, fees
 from app.invest.broker.toss import TossClient, TossError, TossUncertain, num
 from app.invest.marketdata import market as market_mod
 from app.invest.marketdata.market import MarketError, SampleMarket, TossMarket, tick_size
@@ -176,8 +176,8 @@ def exposure_factor(market, symbol: str) -> float:
 
 
 def check_order(conn: sqlite3.Connection, acct: TossAccount, *, symbol: str, side: str,
-                quantity: float, unit_price: float, exclude_id: int | None = None) -> list[str]:
-    """한도 검사. 통과한 항목 설명 목록을 돌려주고, 어기면 TradeError(422)."""
+                quantity: float, unit_price: float, exclude_id: int | None = None, security_type: str | None = None) -> list[str]:
+    """한도 검사. 통과한 항목 설명 목록을 돌려주고, 어기면 TradeError(422). 매수 가능 금액은 수수료까지 더해 본다."""
     lim = config.limits(conn)
     amount = quantity * unit_price
     passed: list[str] = []
@@ -195,12 +195,14 @@ def check_order(conn: sqlite3.Connection, acct: TossAccount, *, symbol: str, sid
         problems.append(f"하루 한도 초과: 오늘 {today:,.0f}원 + {amount:,.0f}원 > {lim['daily_max_krw']:,.0f}원")
     else:
         passed.append(f"하루 한도 {lim['daily_max_krw']:,.0f}원 이내 (오늘 누적 {today + amount:,.0f}원)")
+    cost = fees.estimate(side, amount, security_type)
     if side == "buy":
         bp = acct.buying_power()
-        if amount > bp:
-            problems.append(f"매수 가능 금액 부족: {amount:,.0f}원 > {bp:,.0f}원")
+        need = amount + cost["commission"]
+        if need > bp:
+            problems.append(f"매수 가능 금액 부족: {need:,.0f}원(수수료 포함) > {bp:,.0f}원")
         else:
-            passed.append(f"매수 가능 금액 {bp:,.0f}원 이내")
+            passed.append(f"매수 가능 금액 {bp:,.0f}원 이내 (수수료 포함 {need:,.0f}원)")
         summary = acct.summary()
         held = next((h["value"] for h in summary["holdings"] if h["symbol"] == symbol), 0.0)
         total = summary["total_value"]
@@ -217,6 +219,8 @@ def check_order(conn: sqlite3.Connection, acct: TossAccount, *, symbol: str, sid
             problems.append(f"판매 가능 수량 부족: {quantity:g}주 > {can:g}주")
         else:
             passed.append(f"판매 가능 수량 {can:g}주 이내")
+    passed.append(f"예상 비용 {cost['total']:,.0f}원 (수수료 {cost['commission']:,.0f}원"
+                  + (f" · 거래세 {cost['tax']:,.0f}원" if side == "sell" else "") + ")")
     if problems:
         raise TradeError(" · ".join(problems), 422, checks=passed + [f"✗ {p}" for p in problems])
     return passed
@@ -328,7 +332,8 @@ def place_order(conn: sqlite3.Connection, *, symbol: str, side: str, order_type:
             raise TradeError(f"이 종목에 아직 체결되지 않은 주문이 있습니다 (#{pending['id']} {pending['side']} "
                              f"{pending['quantity']:g}주 @ {pending['price'] or 0:,.0f}원) — 체결되거나 취소된 뒤에 다시", 409)
     try:
-        checks = check_order(conn, acct, symbol=symbol, side=side, quantity=quantity, unit_price=unit)
+        checks = check_order(conn, acct, symbol=symbol, side=side, quantity=quantity, unit_price=unit,
+                             security_type=info.get("security_type"))
         if price_note:
             checks = [price_note, *checks]
     except TradeError as e:
@@ -372,8 +377,12 @@ def approve(conn: sqlite3.Connection, order_id: int, *, confirm_live: bool = Fal
     acct = account(conn, market=market)
     quote = market.quotes([order["symbol"]]).get(order["symbol"]) or {}
     unit = order["price"] or quote.get("price") or order["ref_price"]
+    try:
+        security_type = market.info(order["symbol"]).get("security_type")
+    except (MarketError, TossError):
+        security_type = None  # 모르면 주식으로 (비용을 크게 잡는 쪽)
     checks = check_order(conn, acct, symbol=order["symbol"], side=order["side"], quantity=order["quantity"],
-                         unit_price=unit, exclude_id=order_id)
+                         unit_price=unit, exclude_id=order_id, security_type=security_type)
     _set(conn, order_id, status="open", ref_price=quote.get("price") or order["ref_price"],
          checks_json=json.dumps(checks, ensure_ascii=False))
     acct.submit(get_order(conn, order_id))
