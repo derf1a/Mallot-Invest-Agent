@@ -21,6 +21,7 @@ from tests.test_invest_ai import Script
 from tests.test_invest_autopilot import at, conn  # noqa: F401 — fixture
 
 TITLES = [a["title"] for a in agents.DEFAULT_ROSTER if not a["executor"]]
+DAY = {"agent_orders_today": 3, "max_agent_orders_per_day": 6, "agent_orders_left_today": 3}
 
 
 def _say(b, agent, stance, confidence, now, symbol="005930"):
@@ -197,6 +198,22 @@ def test_holdings_stay_on_watch_with_fresh_quantity(client, conn, broker, at_ope
     assert limits["sellable_quantity"] == {"005930": 3, "000660": 2}                   # 볼 종목에 없는 보유도
 
 
+def test_sold_candidate_drops_stale_held_reason(client, conn, broker, at_open):  # noqa: F811
+    """고를 때 보유였던 후보를 그새 다 팔면 — '보유 — 매도 점검'·'보유 종목'을 그대로 두면 지금 0주인데 보유로 읽힌다."""
+    st = _bare_stream(conn)
+    _buy(conn, "000660")
+    st.candidates = [{"symbol": "035420", "name": "NAVER", "security_type": "STOCK", "held": 5.0, "why": "보유 — 매도 점검 · 손실 -8.0%"},
+                     {"symbol": "005930", "name": "삼성전자", "security_type": "STOCK", "held": 0.0, "why": "점수 순"}]
+    st._sync_held()
+    by = {c["symbol"]: c for c in st.candidates}
+    assert by["035420"]["held"] == 0 and by["035420"]["why"] == stream.SOLD_WHY
+    assert by["005930"]["why"] == "점수 순" and by["000660"]["held"] == 2 and by["000660"]["why"] == "보유 종목"
+    assert by["000660"]["name"] == "SK하이닉스" and by["000660"]["security_type"] == "STOCK"   # 보유에서 온 후보도 이름·유형을 채운다
+    s = agents.Session(conn=conn, scope={"scope": "stream", "label": "x", "candidates": st.candidates}, run_id=None, provider=st.p)
+    rows = {r["symbol"]: r for r in asyncio.run(agents._handlers(s)["compare_candidates"]({}))["candidates"]}
+    assert rows["035420"]["held_quantity"] == 0 and rows["000660"]["held_quantity"] == 2   # get_portfolio 와 같은 토스 보유
+
+
 def test_focus_rotates_to_symbols_not_discussed_lately(client, conn, broker, at_open):  # noqa: F811
     syms = ["005930", "000660", "035420", "035720", "005380", "051910"]
     st = _bare_stream(conn, candidates=syms)
@@ -357,7 +374,7 @@ def test_trader_is_told_to_act_when_the_gate_opens(client, conn, broker, at_open
     st = _bare_stream(conn, candidates=["005930"])
     s = st._session(st._focus(["005930"]), "x")
     gate = {"aligned": [{"symbol": "005930", "direction": "buy"}], "symbols": {"005930": {"reason": "r"}}}
-    assert "관망(hold)은 한도·현금·호가·찬성 의견의 가격 조건 때문에 주문이 불가능할 때만" in stream.trade_prompt(s, gate, "없음", "계기", 3)
+    assert "관망(hold)은 한도·현금·호가·찬성 의견의 가격 조건 때문에 주문이 불가능할 때만" in stream.trade_prompt(s, gate, "없음", "계기", DAY)
 
 
 def test_track_scores_judge_against_the_market(client, conn, broker, at_open):  # noqa: F811

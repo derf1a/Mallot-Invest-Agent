@@ -42,7 +42,7 @@ def test_env_override(monkeypatch):
 def test_buying_power_includes_commission(conn, broker):
     m = SampleMarket()
     price = snap_tick(m.quotes(["005930"])["005930"]["price"], "buy")
-    broker.positions["000660"] = {"quantity": 1_000.0, "cost": 1e8}                    # 비중 한도에 걸리지 않게 다른 보유
+    broker.positions["105560"] = {"quantity": 1_000.0, "cost": 1e8}                    # 종목 · 섹터 비중 한도에 걸리지 않게 다른 섹터 보유
     broker.cash = price + fees.estimate("buy", price)["commission"] - 1                # 주문 금액은 되지만 수수료까지는 모자람
     with pytest.raises(trading.TradeError, match="수수료 포함"):
         trading.place_order(conn, symbol="005930", side="buy", order_type="limit", price=price, quantity=1,

@@ -75,7 +75,7 @@ def test_prompts_make_analysts_weigh_selling_what_they_hold():
     gate = lambda d: {"symbols": {"005930": {"status": "aligned", "reason": "열림"}}, "aligned": [{"symbol": "005930", "direction": d}]}  # noqa: E731
     assert agents.SELL_SIZING in agents.trader_prompt(s, said, gate("sell"), False)               # 일부·전량 수량을 이유에 맞춰
     assert agents.SELL_SIZING not in agents.trader_prompt(s, said, gate("buy"), False)
-    assert agents.SELL_SIZING in stream.trade_prompt(s, gate("sell"), "-", "급변", 3)
+    assert agents.SELL_SIZING in stream.trade_prompt(s, gate("sell"), "-", "급변", {"agent_orders_today": 3, "max_agent_orders_per_day": 6, "agent_orders_left_today": 3})
 
 
 def test_single_stock_debate_on_a_holding_carries_the_sell_check(client, broker, monkeypatch, at_open):  # noqa: F811

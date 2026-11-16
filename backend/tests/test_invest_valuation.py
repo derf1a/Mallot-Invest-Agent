@@ -121,6 +121,69 @@ def test_financials_needs_annual_and_won():
     assert valuation.financials([usd]) is None
 
 
+def full_row(name, *, account_id="-표준계정코드 미사용-", sj="CIS", ord_="1", cur=None, cur_add=None, prev=None, prev_add=None):
+    return {"sj_div": sj, "ord": ord_, "account_id": account_id, "account_nm": name, "thstrm_amount": cur, "thstrm_add_amount": cur_add,
+            "frmtrm_amount": prev, "frmtrm_add_amount": prev_add, "bfefrmtrm_amount": None}
+
+
+def test_revenue_aliases_and_full_statement_fill(conn, monkeypatch):
+    """#19 — 주요계정에 '매출액' 이 없는 회사(참좋은여행: 영업수익, 표준계정 미사용)는 전체 재무제표로 채우고, 음수 매출은 절댓값으로."""
+    alias = valuation.parse_rows([row("111110", "수익(매출액)", cur="900"), row("111110", "매출액", cur="1,000"), row("222220", "영업수익", cur="70")])
+    assert alias["111110"]["accounts"]["revenue"]["cur"] == 1000.0 and alias["222220"]["accounts"]["revenue"]["cur"] == 70.0
+    rows = [row("094850", k, fs="OFS", cur=v, prev=v) for k, v in (("영업이익", "98"), ("당기순이익", "80"), ("자본총계", "700"), ("부채총계", "300"),
+                                                                ("유동자산", "500"), ("유동부채", "250"))]
+    q3 = [row("094850", "매출액", fs="OFS", year=2026, reprt="11014", cur="-205", cur_add="-590", prev_add="-633"),
+          row("094850", "영업이익", fs="OFS", year=2026, reprt="11014", cur="14", cur_add="28", prev_add="84")]
+    stamp = "2026-11-02 08:00:00"
+    valuation._save_report(conn, "094850", valuation.parse_rows(rows)["094850"], stamp)
+    valuation._save_report(conn, "094850", valuation.parse_rows(q3)["094850"], stamp)
+    conn.commit()
+    asked = []
+
+    def full(corp, year, code, fs):
+        asked.append((corp, year, code, fs))
+        return [full_row("영업비용", account_id="dart_TotalSellingGeneralAdministrativeExpenses", ord_="2", cur="823"),
+                full_row("영업수익", ord_="1", cur="921", prev="808")]
+    monkeypatch.setattr(dart, "full_accounts", full)
+    monkeypatch.setattr(valuation, "sleep", lambda s: None)
+    reps = valuation.load_reports(conn, ["094850"])["094850"]
+    assert valuation.fill_revenue(conn, "094850", "00606770", reps) == 1 and asked == [("00606770", 2025, "11011", "OFS")]
+    reps = valuation.load_reports(conn, ["094850"])["094850"]
+    assert valuation.fill_revenue(conn, "094850", "00606770", reps) == 0                          # 한 번 채우면 다시 묻지 않는다
+    f = valuation.financials(reps)
+    assert f["revenue"] == 921 + 590 - 633 and (f["revenue_now"], f["revenue_prior"]) == (590.0, 633.0)
+    assert valuation.assess(f, 1000.0)["indicators"]["op_margin"] is not None
+
+
+def test_report_fetches_an_unsynced_symbol_on_demand(conn, monkeypatch):
+    """#19 — 아직 동기화되지 않은 종목(NAVER)은 report 가 그 자리에서 받고, 고유번호에 없는 종목은 이유를 말한다. 하루 한 번만."""
+    monkeypatch.setenv("DART_API_KEY", "k" * 40)
+    monkeypatch.setattr(valuation, "sleep", lambda s: None)
+    monkeypatch.setattr(valuation, "events", lambda *a: {"disclosures": {}, "people": []})
+    monkeypatch.setattr(valuation, "sector_index", lambda p, notes=None: {"035420": {"sector": "IT", "name": "NAVER", "market_cap": 3e13,
+                                                                                    "trading_amount": None}})
+    monkeypatch.setattr(dart, "corp_codes", lambda: [{"symbol": "035420", "corp_code": "00266961", "corp_name": "NAVER", "modify_date": ""}])
+    calls = []
+
+    def accounts(corps, year, code):
+        calls.append((tuple(corps), year, code))
+        if (year, code) != (2025, "11011"):
+            return []
+        return [row("035420", k, cur=v, prev=v, prev2=v) for k, v in (("매출액", "10e12"), ("영업이익", "1.9e12"), ("당기순이익", "1.8e12"),
+                                                                     ("자본총계", "28e12"), ("부채총계", "12e12"), ("유동자산", "10e12"),
+                                                                     ("유동부채", "8e12"))]
+    monkeypatch.setattr(dart, "multi_accounts", accounts)
+    now = datetime(2026, 11, 2, 9, 0, tzinfo=market.KST)
+    monkeypatch.setattr(market, "now_kst", lambda: now)
+    got = valuation.report(conn, SampleMarket(), "035420")
+    assert got["available"] and got["score"] is not None and got["indicators"]["op_margin"] == pytest.approx(0.19)
+    assert {c[0] for c in calls} == {("00266961",)} and len(calls) == len(valuation.reports_due(now.date()))
+    miss = valuation.report(conn, SampleMarket(), "069500")
+    assert miss["available"] is False and "상장사 목록에 없는" in miss["reason"]
+    calls.clear()
+    again = valuation.report(conn, SampleMarket(), "069500")
+    assert calls == [] and again["reason"] == miss["reason"]                                    # 오늘 또 묻지 않고 같은 이유
+
 # ---- 평가 ----
 def test_band_points_edges():
     assert valuation.band_points("per", 8) == 100 and valuation.band_points("per", 8.1) == 80 and valuation.band_points("per", 31) == 15
@@ -447,3 +510,15 @@ def test_value_investor_tool_answers_without_crashing(conn):  # noqa: F811
                        provider=SampleMarket())
     out = asyncio.run(agents._handlers(s)["get_valuation"]({}))
     assert out["available"] is False and "OpenDART" in out["data_source"]
+
+
+def test_primary_sector_prefers_where_stock_leads_relative_to_size():
+    """여러 대분류에 든 종목은 먼저 나온 섹터가 아니라 (순위 + 1) / (구성 수 + 1) 이 가장 작은 섹터 — 삼성에스디에스는 운송이 아니라 IT."""
+    filler = lambda n, tag: [{"symbol": f"{tag}{i:04d}"} for i in range(n)]  # noqa: E731
+    sds = {"symbol": "018260", "name": "삼성에스디에스", "market_cap": 1e13, "trading_amount": 1e9}
+    lists = [("운송", filler(2, "a") + [sds] + filler(63, "b")), ("IT", filler(3, "c") + [sds] + filler(202, "d")),
+             ("반도체", [{"symbol": "005930"}] + filler(206, "e")), ("스마트폰", [{"symbol": "005930"}] + filler(91, "f"))]
+    idx = valuation.primary_sectors(lists)
+    assert idx["018260"] == {"sector": "IT", "sectors": ["IT", "운송"], "name": "삼성에스디에스", "market_cap": 1e13, "trading_amount": 1e9}
+    assert idx["005930"]["sector"] == "반도체" and idx["005930"]["sectors"] == ["반도체", "스마트폰"]
+    assert idx["a0000"]["sectors"] == ["운송"]
