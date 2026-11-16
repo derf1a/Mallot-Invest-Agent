@@ -2,7 +2,7 @@ import { useState, type ReactNode } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { investApi } from '../features/invest/api'
 import { systemApi } from '../features/settings/api'
-import { otherAppUrl } from '../shared/otherApp'
+import { otherAppUrl, portalUrl } from '../shared/otherApp'
 import { useLoad } from '../shared/useLoad'
 import AccessAlerts from './AccessAlerts'
 import BrandMark from './BrandMark'
@@ -54,6 +54,7 @@ function sections(pilot: ReactNode): NavSection[] {
 }
 const UTILITY: NavItem[] = [{ to: '/settings', label: 'Settings', icon: <SettingsIcon /> }]
 const OTHER_APP = otherAppUrl()
+const PORTAL = portalUrl()
 const MODE_KO = { continuous: '상시', meetings: '회의' } as const
 
 /** 자동 운용 켜짐 표시 — 꺼져 있으면 아무것도 붙이지 않는다 */
@@ -128,6 +129,12 @@ export default function Layout({ onLogout, viewer }: { onLogout?: () => void; vi
         </div>
         <div className="nav-utility">
           {UTILITY.map((item) => link(item, 'small'))}
+          {PORTAL && (
+            <a className="nav-link small app-switch" href={PORTAL} title="Mallot 고르기 화면">
+              <span className="nav-icon" aria-hidden="true">⌂</span>
+              <span>Mallot 홈</span>
+            </a>
+          )}
           {OTHER_APP && (
             <a className="nav-link small app-switch" href={OTHER_APP} title="가계부 앱으로 — 로그인은 따로예요">
               <span className="nav-icon" aria-hidden="true">⇄</span>
