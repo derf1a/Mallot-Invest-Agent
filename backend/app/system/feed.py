@@ -12,8 +12,8 @@ import resource
 import sqlite3
 import sys
 import time
+import tomllib
 from datetime import date, datetime, timedelta
-from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
 from app.core import metrics
@@ -36,10 +36,11 @@ def token_ok(headers, method: str, path: str, proxied: bool) -> bool:
 
 
 def app_version() -> str:
+    """backend/pyproject.toml 의 version (설치한 패키지가 아니라서 메타데이터 대신 파일을 읽는다)."""
     try:
-        return version("mallot-invest-agent")
-    except PackageNotFoundError:
-        return "0"
+        return tomllib.loads((Path(__file__).resolve().parents[2] / "pyproject.toml").read_text())["project"]["version"]
+    except (OSError, KeyError, tomllib.TOMLDecodeError):
+        return "?"
 
 
 def _rss_bytes() -> int | None:
