@@ -124,7 +124,7 @@ def metrics(p, symbol: str) -> dict | None:
         return None
     s = indicators.summary(closes, [c["v"] for c in cs])
     ma20, ma60 = s.get("ma20"), s.get("ma60")
-    al = indicators.alignment(closes[-1], s.get("ma5"), ma20, ma60)
+    al = indicators.alignment(closes[-1], s.get("ma5"), ma20, ma60, s.get("ma120"))
     trend = al["trend"] if al else 0
     return {"price": closes[-1], "change_1d": round(closes[-1] / closes[-2] - 1, 4), "change_5d": s.get("return_5d"),
             "change_20d": s.get("return_20d"), "volume_ratio": s.get("volume_vs_20d_avg"), "rsi": s.get("rsi14"), "trend": trend,

@@ -245,9 +245,10 @@ def _handlers(s: Session, agent_key: str = "") -> dict[str, Callable[[dict], Awa
         out = indicators.summary([c["c"] for c in cs], [c["v"] for c in cs])
         if cs:  # 기간 고저는 종가가 아니라 일봉 고가·저가로 — get_quote 의 range_high·range_low 와 같은 값
             out.update(high_in_range=max(c["h"] for c in cs), low_in_range=min(c["l"] for c in cs))
-        al = indicators.alignment(out.get("last_close"), out.get("ma5"), out.get("ma20"), out.get("ma60"))
+        al = indicators.alignment(out.get("last_close"), out.get("ma5"), out.get("ma20"), out.get("ma60"), out.get("ma120"))
         if al:  # 정렬은 선 순서만 — 종가 위치와 엇갈리면 note 로 알린다 (급반등 직후 '역배열'이 헷갈리지 않게)
-            out.update(ma_alignment=al["label"], ma_alignment_rule="5·20·60일선의 순서만 봄", price_vs_ma=al["price_vs_ma"])
+            out.update(ma_alignment=al["label"], ma_alignment_rule="5·20·60일선의 순서만 봄", price_vs_ma=al["price_vs_ma"],
+                       price_vs_ma_basis=al["price_vs_ma_basis"])  # 종가 위치는 120일선까지 (보여 주는 선과 같게)
             if al["note"]:
                 out["ma_alignment_note"] = al["note"]
         return {"symbol": sym, **out, "data_source": _source(p)}

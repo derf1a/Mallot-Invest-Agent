@@ -41,11 +41,14 @@ def test_ma_alignment_reports_price_position():
     """신세계 I&C 경우 — 선 순서는 역배열인데 종가는 모든 선 위(급반등). 판정은 그대로 두고 엇갈림을 알린다."""
     from app.invest.marketdata import indicators
     rebound = indicators.alignment(120, 100, 105, 110)
-    assert rebound == {"trend": -1, "label": "역배열", "price_vs_ma": "above_all",
+    assert rebound == {"trend": -1, "label": "역배열", "price_vs_ma": "above_all", "price_vs_ma_basis": "5·20·60일선",
                        "note": "역배열이지만 종가는 5·20·60일선 모두 위 — 반등 중, 선 순서는 아직 안 바뀜"}
     assert indicators.alignment(90, 100, 105, 110)["note"] is None                  # 진짜 하락
     assert indicators.alignment(90, 110, 105, 100)["note"].startswith("정배열이지만")
     assert indicators.alignment(104, 100, 105, 110)["price_vs_ma"] == "between" and indicators.alignment(None, 1, 2, 3) is None
+    below_120 = indicators.alignment(120, 100, 105, 110, 130)                       # 5·20·60일선은 넘었지만 120일선 아래 (#29)
+    assert below_120["price_vs_ma"] == "between" and below_120["price_vs_ma_basis"] == "5·20·60·120일선" and below_120["note"] is None
+    assert indicators.alignment(140, 100, 105, 110, 130)["note"].startswith("역배열이지만 종가는 5·20·60·120일선")
     up = exits.check({**H, "last_price": 101_000, "pnl_rate": 0.01, "weight": 0.1},
                      {**M, "trend": -1, "price_vs_ma": "above_all", "drawdown": -0.02, "rsi": 55}, 30)
     assert [f["text"] for f in up["flags"] if f["key"] == "downtrend"] == ["이동평균 역배열 (종가는 모든 선 위 — 반등 중)"]
