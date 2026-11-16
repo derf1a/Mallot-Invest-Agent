@@ -371,9 +371,26 @@ def test_session_bars_keep_only_the_latest_regular_session():
     day = "2026-11-02T"
     bars = [bar(t) for t in ("2026-10-30T15:29:00+09:00", "2026-10-30T19:25:00+09:00", f"{day}08:30:00+09:00", f"{day}09:00:00+09:00",
                              f"{day}09:01:00+09:00", f"{day}15:30:00+09:00", f"{day}16:05:00+09:00")]
-    assert [b["t"][11:16] for b in market.session_bars(bars)] == ["09:00", "09:01", "15:30"]   # 전날·시간외 뺌
+    assert [b["t"][11:16] for b in market.session_bars(bars)] == ["09:01", "15:30"]   # 전날·시간외·09:00 자리 채움 봉 뺌
     assert [b["t"][:16] for b in market.session_bars(bars[:3])] == ["2026-10-30T15:29"]        # 개장 전이면 직전 거래일
     assert market.session_bars(bars[1:3]) == [] and market.session_bars([]) == []
+
+
+def test_intraday_open_matches_quote_open_and_regular_open_is_separate():
+    """#25 — 일봉 시가는 NXT 프리마켓 첫 체결가(90,900)이고, 분봉 '09:00' 봉은 거래 없는 자리 채움 봉(86,500)이다.
+    get_intraday 의 open 은 get_quote 와 같은 일봉 시가, 정규장 첫 체결가는 regular_open 으로 따로."""
+    def bar(hm: str, o: float, v: int, day: str = "2026-11-12") -> dict:
+        return {"t": f"{day}T{hm}:00.000+09:00", "o": o, "h": o + 100, "l": o - 100, "c": o, "v": v}
+    mins = [bar("19:59", 88000, 7763, "2026-11-11"), bar("08:01", 90900, 86203), bar("08:50", 86700, 3290),
+            bar("09:00", 86500, 0), bar("09:01", 86400, 23832), bar("09:02", 87300, 18703), bar("15:30", 88600, 0),
+            bar("15:31", 88600, 6951), bar("16:00", 88400, 105)]
+    daily = [{"t": "2026-11-11", "o": 68700, "h": 89200, "l": 66700, "c": 88200, "v": 1},
+             {"t": "2026-11-12", "o": 90900, "h": 94500, "l": 85500, "c": 87400, "v": 1}]
+    out = market.intraday_summary(mins, daily)
+    assert out["day"] == "2026-11-12" and out["open"] == 90900 and out["regular_open"] == 86400
+    assert out["from"].startswith("2026-11-12T09:01") and out["to"].startswith("2026-11-12T15:31") and out["last"] == 88600
+    assert "high" not in out and "low" not in out and out["regular_high"] == 88700
+    assert market.intraday_summary(mins[:1] + mins[1:3], daily) == {"bars": 0}  # 프리마켓만 있으면 정규장 없음 → 직전일도 정규장 봉 없음
 
 
 def test_quote_and_technicals_use_the_same_range_and_volume_basis(client, broker, at_open, conn):

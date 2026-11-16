@@ -31,6 +31,11 @@ UNIVERSE_TTL = timedelta(days=1)
 
 ETP_TYPES = {"ETF", "ETN", "FOREIGN_ETF"}
 REGULAR_OPEN, REGULAR_CLOSE = "09:00", "15:30"
+# 분봉 시각은 봉이 끝나는 시각이다 — 09:00:00 시가 단일가는 "09:01" 봉, 15:30 종가 단일가는 "15:31" 봉에 들어간다.
+# 그래서 정규장 봉은 09:00 초과 ~ 15:31 이하. "09:00" 봉(08:59~09:00)은 거래 없는 자리 채움 봉이라 시가로 쓰면 안 된다.
+REGULAR_FIRST_BAR, REGULAR_LAST_BAR = "09:01", "15:31"
+OPEN_BASIS = "일봉 시가 — 토스 통합 시세라 NXT 프리마켓(08:00~)이 있는 종목은 그 첫 체결가"
+REGULAR_OPEN_BASIS = "정규장(KRX 09:00 시가 단일가) 첫 체결가 — 분봉에서 구함"
 
 
 class MarketError(Exception):
@@ -120,9 +125,31 @@ def snap_tick(price: float, side: str, security_type: str | None = None) -> floa
 
 def session_bars(bars: list[dict]) -> list[dict]:
     """분봉에서 가장 최근 정규장만 — 토스 분봉에는 전날과 시간외(NXT)가 섞여 있어 그대로 쓰면 시가·VWAP 이 오늘 값이 아니다."""
-    regular = [b for b in bars if REGULAR_OPEN <= b["t"][11:16] <= REGULAR_CLOSE]
+    regular = [b for b in bars if REGULAR_FIRST_BAR <= b["t"][11:16] <= REGULAR_LAST_BAR]
     day = regular[-1]["t"][:10] if regular else None
     return [b for b in regular if b["t"][:10] == day]
+
+
+def intraday_summary(minute_bars: list[dict], daily: list[dict]) -> dict:
+    """분봉 요약. 오늘 시가는 get_quote 와 같은 일봉 시가(open) 하나로 쓰고,
+    분봉에서 구한 정규장 첫 체결가는 regular_open 으로 따로 둔다 (둘이 다르면 NXT 프리마켓 때문)."""
+    ms = session_bars(minute_bars)
+    if not ms:
+        return {"bars": 0}
+    day = ms[-1]["t"][:10]
+    candle = next((c for c in reversed(daily) if c.get("t") == day), None)
+    traded = [m for m in ms if m["v"]] or ms  # 거래 없는 자리 채움 봉은 시가로 쓰지 않는다
+    vol = sum(m["v"] for m in ms) or 1
+    tail = ms[-30:]
+    return {
+        "day": day,
+        "open": candle.get("o") if candle else None, "open_basis": OPEN_BASIS,
+        "regular_open": traded[0]["o"], "regular_open_basis": REGULAR_OPEN_BASIS,
+        "regular_high": max(m["h"] for m in ms), "regular_low": min(m["l"] for m in ms),
+        "last": ms[-1]["c"], "vwap": round(sum(m["c"] * m["v"] for m in ms) / vol, 2),
+        "bars": len(ms), "from": ms[0]["t"], "to": ms[-1]["t"],
+        "last_30m_change": round(tail[-1]["c"] / tail[0]["o"] - 1, 4) if tail[0]["o"] else None,
+    }
 
 
 # ---- 짧은 캐시 (토스 호출 한도 보호) ----
@@ -648,6 +675,44 @@ def provider() -> SampleMarket | TossMarket:
     return TossMarket() if config.toss_configured() else SampleMarket()
 
 
+def master(conn: sqlite3.Connection | None, p: SampleMarket | TossMarket, symbols: list[str]) -> dict[str, dict]:
+    """종목 마스터 → {종목: {name, security_type}}. 종목 목록(invest_universe, 하루 한 번 갱신)에서 먼저, 없으면 종목 정보(p.info)."""
+    want = list(dict.fromkeys(s for s in symbols if s))
+    out: dict[str, dict] = {}
+    if want and conn is not None:
+        try:
+            marks = ",".join("?" * len(want))
+            out = {r[0]: {"name": r[1] or "", "security_type": r[2] or ""} for r in conn.execute(
+                f"SELECT symbol, name, security_type FROM invest_universe WHERE symbol IN ({marks})", want)}
+        except sqlite3.Error:
+            out = {}
+    for s in want:
+        if out.get(s, {}).get("name") and out[s].get("security_type"):
+            continue
+        try:
+            info = p.info(s)
+        except (MarketError, TossError):
+            continue
+        prev = out.get(s, {})
+        out[s] = {"name": prev.get("name") or info.get("name") or "", "security_type": prev.get("security_type") or info.get("security_type") or ""}
+    return out
+
+
+def fill_names(conn: sqlite3.Connection | None, p: SampleMarket | TossMarket, rows: list[dict]) -> list[dict]:
+    """후보·풀 줄 중 이름이 비었거나 코드뿐이고 유형(security_type)이 빈 것을 종목 마스터로 채운다 (rows 를 고쳐 그대로 돌려준다)."""
+    todo = [r for r in rows if not r.get("name") or r.get("name") == r.get("symbol") or not r.get("security_type")]
+    if not todo:
+        return rows
+    found = master(conn, p, [r["symbol"] for r in todo])
+    for r in todo:
+        m = found.get(r["symbol"]) or {}
+        if (not r.get("name") or r.get("name") == r["symbol"]) and m.get("name"):
+            r["name"] = m["name"]
+        if not r.get("security_type") and m.get("security_type"):
+            r["security_type"] = m["security_type"]
+    return rows
+
+
 def snapshot(p: SampleMarket | TossMarket, symbol: str) -> dict:
     """종목 머리글·정보 탭: 현재가, 전일 대비, 오늘 시고저, 최근 범위 고저, 상하한가, 기본 정보."""
     symbol = symbol_ok(symbol) if p.key == "toss" else symbol.strip()
@@ -672,9 +737,10 @@ def snapshot(p: SampleMarket | TossMarket, symbol: str) -> dict:
         "price": price,
         "currency": currency,
         "prev_close": prev,
+        "as_of": quote.get("timestamp"),  # 현재가 기준 시각 — 도구마다 부른 때가 달라 값이 조금씩 다를 수 있다
         "change": (price - prev) if price is not None and prev else None,
         "change_rate": (price / prev - 1) if price and prev else None,
-        "open": today.get("o"), "high": today.get("h"), "low": today.get("l"), "volume": today.get("v"),
+        "open": today.get("o"), "open_basis": OPEN_BASIS, "high": today.get("h"), "low": today.get("l"), "volume": today.get("v"),
         "day": today.get("t"),
         "range_high": max((c["h"] for c in daily), default=None),
         "range_low": min((c["l"] for c in daily), default=None),

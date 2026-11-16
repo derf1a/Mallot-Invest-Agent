@@ -38,8 +38,8 @@ def _pct(v: float | None) -> str:
 
 
 def position_limit(conn: sqlite3.Connection) -> float:
-    """종목당 비중 한도(%) — 주문 한도(max_position_pct)와 운용 목표의 종목당 최대 비중 중 낮은 쪽."""
-    lim = config.limits(conn)["max_position_pct"]
+    """종목당 비중 한도(%) — 지금 쓰는 종목당 한도(에이전트가 정한 값 또는 설정 화면)와 운용 목표의 종목당 최대 비중 중 낮은 쪽."""
+    lim = config.risk_limits(conn)["max_position_pct"]
     goal = policy.get(conn).get("max_position")
     return min(lim, goal) if goal else lim
 

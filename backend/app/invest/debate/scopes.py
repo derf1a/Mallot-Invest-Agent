@@ -8,6 +8,8 @@
   점수를 매기고, pick(회의 작업은 포트폴리오 매니저 LLM 이 리서치 요약과 함께, 미리 보기는 점수 순)이 후보 수만큼 고른다.
   params.focus(리스크 경보 종목)는 언제나 후보 앞에. 보유 종목(국내)은 매도 타이밍을 보려고 후보 수와 따로 언제나 뒤에 붙인다
   (exits.MAX_HELD 개까지, 매도 점검 신호·비중 순, 이유 '보유 — 매도 점검'). 결과 표는 out["screening"].
+  1주 가격이 매수 가능 금액(토스, 계좌를 읽었을 때만)보다 큰 미보유 종목은 고르기 전에 뺀다(unaffordable — 팔아서 생길 현금은 셈하지 않고,
+  보유 종목은 팔 수 있어 남긴다). 뺀 종목은 notes 와 판단 기록(excluded)에.
 후보 수는 실험실 설정 max_candidates 로 자른다. 해외 종목은 아직 주문을 못 하므로 후보에서 뺀다.
 """
 
@@ -109,10 +111,12 @@ def resolve(conn: sqlite3.Connection, p, params: dict, max_candidates: int, pick
         raise ScopeError(f"알 수 없는 토론 범위입니다: {scope}")
     notes: list[str] = []
     holdings: list[dict] = []
+    buying_power: float | None = None  # 매수 가능 금액(원) — 못 읽으면 None(살 수 있는지 거르지 않는다)
     read = False  # 계좌를 읽었을 때만 후보에 held(보유 수량, 없으면 0)를 단다 — 못 읽었으면 보유를 모르는 것(게이트가 매도 쪽을 닫지 않게)
     if scope in ("portfolio", "sector", "autopilot", "scan", "symbol"):  # 단일 종목도 — 가진 종목이면 매도 점검이 붙게
         try:
-            holdings = trading.account(conn, market=p).summary()["holdings"]
+            summ = trading.account(conn, market=p).summary()
+            holdings, buying_power = summ["holdings"], summ.get("buying_power")
             read = True
         except (TradeError, MarketError, TossError) as e:
             if scope in ("portfolio", "autopilot", "scan"):
@@ -150,7 +154,7 @@ def resolve(conn: sqlite3.Connection, p, params: dict, max_candidates: int, pick
         if len(stocks) + len(etfs) > len(cands):
             notes.append(f"구성 {len(stocks)}종목·ETF {len(etfs)}개 중 시가총액 상위 {len(cands)}개만 토론합니다")
     elif scope in ("autopilot", "scan"):
-        cands, out["screening"] = _scan(conn, p, params, holdings, max_candidates, notes, pick)
+        cands, out["screening"] = _scan(conn, p, params, holdings, max_candidates, notes, pick, buying_power if read else None)
         out["label"] = "시장 스캔" if scope == "scan" else "보유 + 운용 지시"
     else:
         seen: set[str] = set()
@@ -170,6 +174,7 @@ def resolve(conn: sqlite3.Connection, p, params: dict, max_candidates: int, pick
         out["label"] = "전체 (보유 + 관심)"
     if not cands:
         raise ScopeError("토론할 국내 종목이 없습니다")
+    market.fill_names(conn, p, cands)  # 보유·발굴에서 온 후보는 이름이 코드뿐이거나 유형이 비어 있을 수 있다 — 종목 마스터로 채운다
     for c in cands:
         if read:
             c["held"] = held.get(c["symbol"], 0.0)
@@ -178,9 +183,24 @@ def resolve(conn: sqlite3.Connection, p, params: dict, max_candidates: int, pick
     return out
 
 
+def unaffordable(rows: list[dict], holdings: list[dict], buying_power: float | None) -> dict[str, str]:
+    """1주 가격이 매수 가능 금액보다 커서 1주도 살 수 없는 미보유 종목 → {종목: 이유}. 보유 종목은 팔 수 있어 남기고,
+    매수 가능 금액을 모르거나(None) 가격을 못 받은 종목은 거르지 않는다. 팔아서 생길 현금은 셈하지 않는다."""
+    if buying_power is None:
+        return {}
+    held = {h["symbol"] for h in holdings if h.get("quantity")}
+    out = {}
+    for r in rows:
+        price = (r.get("metrics") or {}).get("price")
+        if r["symbol"] not in held and price and price > buying_power:
+            out[r["symbol"]] = f"1주 {price:,.0f}원 > 매수 가능 {buying_power:,.0f}원"
+    return out
+
+
 def _scan(conn: sqlite3.Connection, p, params: dict, holdings: list[dict], max_candidates: int, notes: list[str],
-          pick: Pick | None) -> tuple[list[dict], dict]:
-    """여러 종목을 훑어(screening) 회의 후보를 고른다 — 리스크 경보 종목, 운용 지시의 종목·섹터, 보유, 발굴 목록, 관심, 시장 랭킹."""
+          pick: Pick | None, buying_power: float | None = None) -> tuple[list[dict], dict]:
+    """여러 종목을 훑어(screening) 회의 후보를 고른다 — 리스크 경보 종목, 운용 지시의 종목·섹터, 보유, 발굴 목록, 관심, 시장 랭킹.
+    1주도 살 수 없는 미보유 종목(unaffordable)은 고르기 전에 뺀다."""
     text = "\n".join(str(t) for t in params.get("intents") or [])
     named = intent_symbols(conn, p, text)
     secs = intent_sectors(p, text)
@@ -197,10 +217,18 @@ def _scan(conn: sqlite3.Connection, p, params: dict, holdings: list[dict], max_c
     goal = policy.text(policy.get(conn))
     context = "\n".join(x for x in (f"운용 목표:\n{goal}" if goal else "",
                                     f"이번 회의 안건: {params['agenda']}" if params.get("agenda") else "", desk.brief(conn, day)) if x)
-    chosen = (pick or (lambda rows, _t, n, _c: screening.code_pick(rows, n)))(result["rows"], text, max_candidates, context)
+    pricey = unaffordable(result["rows"], holdings, buying_power)
+    if pricey:
+        names_ = {r["symbol"]: r["name"] for r in result["rows"]}
+        notes.append(f"1주 가격이 매수 가능 금액({buying_power:,.0f}원)보다 큰 미보유 {len(pricey)}종목은 후보에서 뺐어요"
+                     f" (보유 종목은 팔 수 있어 남김): " + ", ".join(f"{names_[s_]}({s_})" for s_ in list(pricey)[:8])
+                     + (" 외" if len(pricey) > 8 else ""))
+    affordable = [r for r in result["rows"] if r["symbol"] not in pricey]
+    chosen = (pick or (lambda rows, _t, n, _c: screening.code_pick(rows, n)))(affordable, text, max_candidates, context)
     by_sym = {r["symbol"]: r for r in result["rows"]}
     focus_why = params.get("focus_why") or {}
-    forced = [{"symbol": f, "reason": f"리스크 경보 — {focus_why.get(f) or '이번 회의에서 꼭 봐요'}"} for f in focus if f in by_sym]
+    forced = [{"symbol": f, "reason": f"리스크 경보 — {focus_why.get(f) or '이번 회의에서 꼭 봐요'}"} for f in focus
+              if f in by_sym and f not in pricey]
     picks = (forced + [x for x in chosen["picks"] if x["symbol"] not in focus])[:max(max_candidates, len(forced))]
     picks += _held_picks(conn, p, holdings, result["rows"], picks, notes)
     chosen = {**chosen, "picks": picks}
@@ -212,11 +240,13 @@ def _scan(conn: sqlite3.Connection, p, params: dict, holdings: list[dict], max_c
         notes.append("운용 지시에서 찾은 섹터: " + ", ".join(s_["name"] for s_ in secs))
     if ideas:
         notes.append(f"오늘 발굴 목록 {len(ideas)}종목을 함께 훑었어요")
+    if not cands and pricey:
+        raise ScopeError(f"매수 가능 금액({buying_power:,.0f}원)으로 1주라도 살 수 있는 종목이 없고 보유 종목도 없어요")
     if not cands:
         raise ScopeError("훑어볼 종목이 없어요 — 보유·관심 종목이 없고 시장 랭킹도 받지 못했어요")
     picked = {c["symbol"] for c in cands}
     if pick is not None:  # 미리 보기는 판단이 아니라 남기지 않는다
-        scorelog.record(conn, "meeting", screening.log_rows(result["rows"], picks), screening.rules(), run_id=params.get("run_id"), regime=regime,
+        scorelog.record(conn, "meeting", screening.log_rows(result["rows"], picks, excluded=pricey), screening.rules(), run_id=params.get("run_id"), regime=regime,
                         pool=result["pool"], by=chosen.get("by", "code"), summary=chosen.get("summary") or "", notes=notes,
                         meta={"scope": params.get("scope"), "agenda": params.get("agenda") or ""})
     rows = [{"symbol": r["symbol"], "name": r["name"], "sources": r["sources"], "score": r["score"], "metrics": r["metrics"], "sector": r.get("sector"),

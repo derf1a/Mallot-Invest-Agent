@@ -42,6 +42,9 @@ class JobSpec:
     # 서버 재시작으로 끊긴 실행을 정리할 때 부른다 (conn, 실행 dict) → 그때까지의 요약(summary_json) 또는 None.
     # 끊긴 실행도 그때까지 한 일(예: 낸 주문)이 남아 있어서 — 비우면 '아무 일도 없었다'로 읽힌다.
     on_interrupted: Callable[[sqlite3.Connection, dict], dict | None] | None = None
+    # 실행이 오류로 실패하거나 취소됐을 때 부른다 (conn, 실행 dict, 원인) → 그때까지의 요약 또는 None.
+    # 도중에 낸 주문 같은 한 일이 요약 없이 '실패'로만 남지 않게 — 원인도 요약에 같이 적는다.
+    on_failed: Callable[[sqlite3.Connection, dict, str], dict | None] | None = None
 
 
 REGISTRY: dict[str, JobSpec] = {}
@@ -177,17 +180,30 @@ def execute(run_id: int) -> None:
         _finish(conn, run_id, "succeeded", summary=summary)
     except Cancelled:
         ctx.log("사용자가 취소했습니다", "warn")
-        _finish(conn, run_id, "cancelled")
+        _finish(conn, run_id, "cancelled", summary=_failed_summary(conn, spec, run_id, "사용자가 중지함"))
     except JobError as e:
         ctx.log(str(e), "error")
-        _finish(conn, run_id, "failed", error=str(e))
+        _finish(conn, run_id, "failed", summary=_failed_summary(conn, spec, run_id, str(e)), error=str(e))
     except Exception as e:  # noqa: BLE001 — 어떤 오류든 실행 기록에 남겨야 한다
         log.exception("run %s failed", run_id)
         ctx.log(f"{type(e).__name__}: {e}\n{traceback.format_exc(limit=5)}", "error")
-        _finish(conn, run_id, "failed", error=f"{type(e).__name__}: {e}")
+        cause = f"{type(e).__name__}: {e}"
+        _finish(conn, run_id, "failed", summary=_failed_summary(conn, spec, run_id, cause), error=cause)
     finally:
         CURRENT_RUN.reset(token)
         ctx.close()
+
+
+def _failed_summary(conn: sqlite3.Connection, spec: JobSpec, run_id: int, cause: str) -> dict | None:
+    """실패·취소한 실행의 그때까지 요약 (spec.on_failed). 요약을 못 만들어도 실행 기록은 그대로 끝낸다."""
+    if not spec.on_failed:
+        return None
+    try:
+        row = conn.execute("SELECT r.*, NULL AS dataset_name, NULL AS parent_name FROM runs r WHERE id = ?", (run_id,)).fetchone()
+        return spec.on_failed(conn, run_dict(row), cause)
+    except Exception:  # noqa: BLE001 — 요약 실패가 실패 기록을 막으면 안 된다
+        log.exception("실패한 실행 #%s 요약 실패", run_id)
+        return None
 
 
 def _finish(conn: sqlite3.Connection, run_id: int, status: str, summary: dict | None = None,

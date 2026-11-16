@@ -2,7 +2,9 @@
 
 모든 주문(수동·에이전트)은 place_order 를 지나며, 그 앞에서 코드가 검사한다:
   전체 중지 → 주문 조건(토스 키·PIN) → 수동 주문 확인 → 국내(원화) 종목만 → 수량·가격 형식 → 건당 한도 → 하루 한도
-  → 매수 가능 금액(수수료 포함) / 판매 가능 수량 → 매수 후 종목 비중 한도. 검사 기록 끝에 예상 비용(수수료 · 거래세 — fees.py).
+  → 매수 가능 금액(수수료 포함) / 판매 가능 수량 → (매수) 채권 · 현금성 상품 금지(주식 비중 100%) → 매수 후 종목 비중 한도
+  → 매수 후 섹터 비중 한도. 검사 기록 끝에 예상 비용(수수료 · 거래세 — fees.py).
+종목 · 섹터 비중 한도는 에이전트(리스크 · 포트폴리오 매니저)가 정한 값(config.risk_limits)을 쓴다.
 승인 없이 바로 나가는 에이전트 주문(자동 운용)은 더: 자동 주문 시간(정규장 +5분 ~ 끝 −15분, 마감 동시호가 전) 안에서만,
 장 시작 30분 안에는 지정가만(market.auto_order_problem), 같은 종목에 체결 안 된 에이전트 주문이 있으면 새 주문을 내지 않는다.
 호가 기준 지정가: price_at(bid 매수 1호가 · ask 매도 1호가 · mid 가운데 · last 현재가) + ticks(호가 단위 칸, + 위 · − 아래)를 주면
@@ -175,6 +177,43 @@ def exposure_factor(market, symbol: str) -> float:
         return 1.0
 
 
+def sectors_of(market) -> dict[str, str]:
+    """종목 → 대분류 섹터 (토스 섹터, 6시간 캐시). 못 받으면 빈 dict — 섹터 한도 검사를 건너뛴다."""
+    from app.invest.analysis import valuation  # 늦게 — 가치평가 모듈이 무겁고 주문 모듈보다 위에서 쓰인다
+    try:
+        return {sym: x["sector"] for sym, x in valuation.sector_index(market).items() if x.get("sector")}
+    except Exception:  # noqa: BLE001 — 섹터를 몰라도 다른 한도 검사는 그대로 한다
+        return {}
+
+
+def sector_weights(market, holdings: list[dict], total: float) -> dict[str, float]:
+    """보유(원화 종목)의 섹터별 비중(%) — 섹터를 모르는 종목은 '기타'."""
+    sec = sectors_of(market)
+    out: dict[str, float] = {}
+    for h in holdings:
+        if h.get("currency") not in (None, "KRW") or not total:
+            continue
+        name = sec.get(h["symbol"], "기타")
+        out[name] = out.get(name, 0.0) + h["value"] / total * 100
+    return {k: round(v, 1) for k, v in sorted(out.items(), key=lambda x: -x[1])}
+
+
+def sector_check(market, symbol: str, amount: float, summary: dict, risk: dict, passed: list[str], problems: list[str]) -> None:
+    sec = sectors_of(market)
+    sector = sec.get(symbol)
+    total = summary["total_value"]
+    if not sector or not total:
+        passed.append("섹터 비중 — 섹터를 알 수 없어 건너뜀")
+        return
+    held = sum(h["value"] for h in summary["holdings"] if sec.get(h["symbol"]) == sector and h.get("currency") in (None, "KRW"))
+    weight = (held + amount) / total * 100
+    cap = config.sector_limit(risk, sector)
+    if weight > cap:
+        problems.append(f"섹터 비중 한도 초과: 매수 후 {sector} {weight:.1f}% > {cap:g}%")
+    else:
+        passed.append(f"매수 후 섹터 {sector} 비중 {weight:.1f}% ≤ {cap:g}%")
+
+
 def check_order(conn: sqlite3.Connection, acct: TossAccount, *, symbol: str, side: str,
                 quantity: float, unit_price: float, exclude_id: int | None = None, security_type: str | None = None) -> list[str]:
     """한도 검사. 통과한 항목 설명 목록을 돌려주고, 어기면 TradeError(422). 매수 가능 금액은 수수료까지 더해 본다."""
@@ -203,16 +242,25 @@ def check_order(conn: sqlite3.Connection, acct: TossAccount, *, symbol: str, sid
             problems.append(f"매수 가능 금액 부족: {need:,.0f}원(수수료 포함) > {bp:,.0f}원")
         else:
             passed.append(f"매수 가능 금액 {bp:,.0f}원 이내 (수수료 포함 {need:,.0f}원)")
+        try:
+            info = acct.market.info(symbol)
+        except (MarketError, TossError):
+            info = {}
+        if config.non_equity(info.get("name") or "", info.get("security_type") or ""):
+            problems.append(f"채권 · 현금성 상품은 사지 않습니다 (주식 비중 {config.EQUITY_TARGET_PCT:g}% 원칙): {info.get('name') or symbol}")
+        risk = config.risk_limits(conn)
         summary = acct.summary()
         held = next((h["value"] for h in summary["holdings"] if h["symbol"] == symbol), 0.0)
         total = summary["total_value"]
         factor = exposure_factor(acct.market, symbol)
         weight = (held + amount) * factor / total * 100 if total else 100.0
         what = f"노출 {weight:.1f}%(평가액 × {factor:g}배)" if factor != 1 else f"{weight:.1f}%"
-        if weight > lim["max_position_pct"]:
-            problems.append(f"종목 비중 한도 초과: 매수 후 {what} > {lim['max_position_pct']:g}%")
+        cap = risk["max_position_pct"]
+        if weight > cap:
+            problems.append(f"종목 비중 한도 초과: 매수 후 {what} > {cap:g}% ({risk['position_set_by']})")
         else:
-            passed.append(f"매수 후 종목 비중 {what} ≤ {lim['max_position_pct']:g}%")
+            passed.append(f"매수 후 종목 비중 {what} ≤ {cap:g}%")
+        sector_check(acct.market, symbol, amount, summary, risk, passed, problems)
     else:
         can = acct.sellable(symbol)
         if quantity > can + 1e-9:
@@ -405,6 +453,47 @@ def cancel(conn: sqlite3.Connection, order_id: int, market=None) -> dict:
         raise TradeError(f"취소할 수 없는 상태입니다 ({order['status']})", 409)
     account(conn, market=market).cancel(order)
     return get_order(conn, order_id)
+
+
+def open_broker_orders(conn: sqlite3.Connection, acct: TossAccount, symbols: list[str] | None = None) -> list[dict]:
+    """토스에 걸려 있는(미체결 · 일부 체결) 주문 — 앱 밖에서 낸 것도. 판매 가능 수량이 보유보다 적은 이유를 보여 줄 때 쓴다.
+    못 받으면 []."""
+    try:
+        rows = acct.client.orders("OPEN")
+    except TossError:
+        return []
+    ours = {r[0]: (r[1], r[2]) for r in conn.execute(
+        "SELECT broker_order_id, id, source FROM invest_orders WHERE broker_order_id IS NOT NULL AND status IN ('open', 'partial')")}
+    out = []
+    for o in rows:
+        sym = str(o.get("symbol") or "")
+        if symbols is not None and sym not in symbols:
+            continue
+        q = num(o.get("quantity")) or 0
+        filled = num((o.get("execution") or {}).get("filledQuantity")) or 0
+        app_id, source = ours.get(str(o.get("orderId")), (None, None))
+        out.append({"symbol": sym, "side": str(o.get("side") or "").lower(), "order_type": str(o.get("orderType") or "").lower(),
+                    "quantity": q, "filled": filled, "remaining": max(0.0, q - filled), "price": num(o.get("price")),
+                    "status": o.get("status"), "ordered_at": o.get("orderedAt"), "order_id": app_id,
+                    "placed_by": {"agent": "에이전트", "manual": "앱에서 직접"}.get(source, "앱 밖(토스 앱 등)")})
+    return out
+
+
+def sellable_gaps(holdings: dict[str, float], sellable: dict[str, float], open_orders: list[dict]) -> dict[str, dict]:
+    """보유 수량보다 판매 가능 수량이 적은 종목 → 차이와 이유 (미체결 매도 주문이 잡고 있는 수량)."""
+    out = {}
+    for sym, held in holdings.items():
+        can = sellable.get(sym)
+        if can is None or can + 1e-9 >= held:
+            continue
+        locked = sum(o["remaining"] for o in open_orders if o["symbol"] == sym and o["side"] == "sell")
+        gap = held - can
+        why = (f"미체결 매도 주문이 {locked:g}주를 잡고 있음" if abs(locked - gap) < 1e-9 else
+               f"미체결 매도 {locked:g}주로 {gap - locked:g}주가 설명되지 않음 — 토스 앱에서 확인 필요" if locked else
+               "미체결 매도 주문이 없는데 적음 — 토스 앱에서 확인 필요")
+        out[sym] = {"held": held, "sellable": can, "gap": gap, "locked_by_open_sells": locked, "why": why,
+                    "open_orders": [o for o in open_orders if o["symbol"] == sym]}
+    return out
 
 
 def cancel_open_agent_orders(conn: sqlite3.Connection, market=None) -> list[dict]:

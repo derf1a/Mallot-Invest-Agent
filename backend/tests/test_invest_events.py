@@ -141,6 +141,36 @@ def test_symbol_queries_and_fetch_symbol(conn, monkeypatch):
     assert [n["title"] for n in items] == ["테스트전자, 대형 수주"] and len(errors) == 1   # 하나가 실패해도 나머지는 쓴다
 
 
+
+def test_place_name_stock_news_drops_regional_articles(conn, monkeypatch):
+    """#26 — 보령(003850, 제약)을 찾으면 보령시 · 보령산 · 보령 수산기업 대보㈜ 기사가 섞이던 문제."""
+    titles = ["보령 대보㈜, 중국 기업과 수산물 수출입 계약… 2027년 500억 목표", "보령 수산기업 대보(주), 산동룬저와 대규모 수산물 수출계약 체결",
+              "보령산 해삼 중국 시장 진출 본격화…현지 기업과 수출·물류 협력", "보령시의회, 내년 예산안 심사 착수",
+              "보령, 3분기 누적 영업익 694억…지난해 연간 실적 넘어서", "동구바이오제약, 보령바이오파마와 15.8억 공동개발 계약",
+              "AI주식상승확률분석 : 보령(003850) 주가 전망", "보령 머드축제 관광객 몰려"]
+    items = "".join(f"<item><title>{t} - 신문</title><link>https://news.google.com/b{i}</link><source>신문</source>"
+                    f"<pubDate>Tue, 10 Nov 2026 0{i}:00:00 GMT</pubDate></item>" for i, t in enumerate(titles))
+    seen = []
+
+    def http(method, url, headers=None, data=None, timeout=15):
+        seen.append(url)
+        body = items if "003850" not in url else (  # 종목코드 검색어 — 코드가 본문에만 있어도 회사 기사, 지역 표시는 그래도 뺀다
+            '<item><title>보령 우주 프로젝트 결선 - 신문</title><link>https://news.google.com/c1</link><source>신문</source></item>'
+            '<item><title>보령시 대보㈜ 수출 - 신문</title><link>https://news.google.com/c2</link><source>신문</source></item>')
+        return 200, f'<?xml version="1.0"?><rss><channel>{body}</channel></rss>'.encode()
+    monkeypatch.setattr(news, "HTTP", http)
+    qs = news.symbol_queries("보령", "003850")
+    assert qs == ["보령 주가", "보령 실적 OR 수주 OR 계약 OR 공시 -보령시 -보령군", "보령 003850"]
+    got = {n["title"] for n in news.fetch_symbol(conn, "003850", "보령")}
+    assert got == {"보령, 3분기 누적 영업익 694억…지난해 연간 실적 넘어서", "동구바이오제약, 보령바이오파마와 15.8억 공동개발 계약",
+                   "AI주식상승확률분석 : 보령(003850) 주가 전망", "보령 우주 프로젝트 결선"}
+    assert len(seen) == 3
+    assert {n["title"] for n in news.recent(conn, symbols=["003850"])} == got           # 걸러진 기사는 저장도 안 한다
+    # 흔한 이름이 아니면 규칙을 쓰지 않는다
+    assert news.relevant("삼성전자", "005930", {"title": "삼성전자 수원시 기부"}) and not news.ambiguous("삼성전자")
+    assert news.relevant("서산", None, {"title": "서산, 2분기 영업이익 흑자 전환"})
+    assert not news.relevant("서산", None, {"title": "서산시 해미읍성 축제"})
+
 FIG_RSS = """<?xml version="1.0"?><rss><channel>
 <item><title>젠슨 황 "HBM 수요 더 늘 것" 발언 - 연합</title><link>https://news.google.com/f1</link><source>연합</source>
 <pubDate>Wed, 11 Nov 2026 00:00:00 GMT</pubDate></item>

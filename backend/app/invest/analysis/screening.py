@@ -22,7 +22,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from app.invest.analysis import valuation
 from app.invest.broker.toss import TossError
-from app.invest.marketdata import indicators, watch
+from app.invest.marketdata import indicators, market, watch
 from app.invest.marketdata.market import MarketError
 from app.llm.client import LLMError, structured
 from app.llm.routes import as_agent
@@ -70,6 +70,10 @@ def pool(conn, p, named: list[dict], sectors: list[dict], holdings: list[dict], 
         if not _kr(sym):
             return
         row = out.setdefault(sym, {"symbol": sym, "name": name or sym, "security_type": stype or "", "sources": []})
+        if name and row["name"] == sym:  # 먼저 들어온 출처(보유·발굴)에 이름·유형이 없었으면 뒤 출처 것으로
+            row["name"] = name
+        if stype and not row["security_type"]:
+            row["security_type"] = stype
         if source not in row["sources"]:
             row["sources"].append(source)
 
@@ -107,7 +111,7 @@ def pool(conn, p, named: list[dict], sectors: list[dict], holdings: list[dict], 
     if len(rows) > MAX_POOL:
         notes.append(f"훑어볼 종목 {len(rows)}개 중 {MAX_POOL}개만 봅니다 (경보·지시·보유·발굴·관심 먼저)")
         rows = rows[:MAX_POOL]
-    return rows
+    return market.fill_names(conn, p, rows)  # 그래도 이름이 코드뿐이거나 유형이 비면 종목 마스터로
 
 
 def metrics(p, symbol: str) -> dict | None:
@@ -120,7 +124,7 @@ def metrics(p, symbol: str) -> dict | None:
         return None
     s = indicators.summary(closes, [c["v"] for c in cs])
     ma20, ma60 = s.get("ma20"), s.get("ma60")
-    al = indicators.alignment(closes[-1], s.get("ma5"), ma20, ma60)
+    al = indicators.alignment(closes[-1], s.get("ma5"), ma20, ma60, s.get("ma120"))
     trend = al["trend"] if al else 0
     return {"price": closes[-1], "change_1d": round(closes[-1] / closes[-2] - 1, 4), "change_5d": s.get("return_5d"),
             "change_20d": s.get("return_20d"), "volume_ratio": s.get("volume_vs_20d_avg"), "rsi": s.get("rsi14"), "trend": trend,

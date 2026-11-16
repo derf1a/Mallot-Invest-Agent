@@ -21,6 +21,7 @@ from tests.test_invest_ai import Script
 from tests.test_invest_autopilot import at, conn  # noqa: F401 — fixture
 
 TITLES = [a["title"] for a in agents.DEFAULT_ROSTER if not a["executor"]]
+DAY = {"agent_orders_today": 3, "max_agent_orders_per_day": 6, "agent_orders_left_today": 3}
 
 
 def _say(b, agent, stance, confidence, now, symbol="005930"):
@@ -197,6 +198,22 @@ def test_holdings_stay_on_watch_with_fresh_quantity(client, conn, broker, at_ope
     assert limits["sellable_quantity"] == {"005930": 3, "000660": 2}                   # 볼 종목에 없는 보유도
 
 
+def test_sold_candidate_drops_stale_held_reason(client, conn, broker, at_open):  # noqa: F811
+    """고를 때 보유였던 후보를 그새 다 팔면 — '보유 — 매도 점검'·'보유 종목'을 그대로 두면 지금 0주인데 보유로 읽힌다."""
+    st = _bare_stream(conn)
+    _buy(conn, "000660")
+    st.candidates = [{"symbol": "035420", "name": "NAVER", "security_type": "STOCK", "held": 5.0, "why": "보유 — 매도 점검 · 손실 -8.0%"},
+                     {"symbol": "005930", "name": "삼성전자", "security_type": "STOCK", "held": 0.0, "why": "점수 순"}]
+    st._sync_held()
+    by = {c["symbol"]: c for c in st.candidates}
+    assert by["035420"]["held"] == 0 and by["035420"]["why"] == stream.SOLD_WHY
+    assert by["005930"]["why"] == "점수 순" and by["000660"]["held"] == 2 and by["000660"]["why"] == "보유 종목"
+    assert by["000660"]["name"] == "SK하이닉스" and by["000660"]["security_type"] == "STOCK"   # 보유에서 온 후보도 이름·유형을 채운다
+    s = agents.Session(conn=conn, scope={"scope": "stream", "label": "x", "candidates": st.candidates}, run_id=None, provider=st.p)
+    rows = {r["symbol"]: r for r in asyncio.run(agents._handlers(s)["compare_candidates"]({}))["candidates"]}
+    assert rows["035420"]["held_quantity"] == 0 and rows["000660"]["held_quantity"] == 2   # get_portfolio 와 같은 토스 보유
+
+
 def test_focus_rotates_to_symbols_not_discussed_lately(client, conn, broker, at_open):  # noqa: F811
     syms = ["005930", "000660", "035420", "035720", "005380", "051910"]
     st = _bare_stream(conn, candidates=syms)
@@ -208,11 +225,13 @@ def test_focus_rotates_to_symbols_not_discussed_lately(client, conn, broker, at_
 
 def test_move_trigger_says_which_prices(client, conn, broker, at_open):  # noqa: F811
     prices = {"p": 100_000}
-    p = SimpleNamespace(quotes=lambda syms: {s_: {"price": prices["p"]} for s_ in syms})
+    p = SimpleNamespace(quotes=lambda syms: {s_: {"price": prices["p"], "timestamp": "2026-10-13T11:30:05+09:00"} for s_ in syms},
+                        candles=lambda sym, interval, count: [{"t": "2026-10-12", "c": 105_000}, {"t": "2026-10-13", "c": prices["p"]}])
     st = _bare_stream(conn, p, ["005930"])
     assert st._moved() is None
     prices["p"] = 102_500
-    assert "+2.5% (100,000원 → 102,500원," in st._moved()["text"]
+    text = st._moved()["text"]
+    assert "지난 대화 뒤 +2.5% (100,000원 → 102,500원)" in text and "오늘(전일 대비) -2.4%" in text and "11:30:05 기준" in text
 
 
 def test_minutes_keep_the_gate_at_order_time(client, conn, broker, monkeypatch):  # noqa: F811
@@ -357,7 +376,7 @@ def test_trader_is_told_to_act_when_the_gate_opens(client, conn, broker, at_open
     st = _bare_stream(conn, candidates=["005930"])
     s = st._session(st._focus(["005930"]), "x")
     gate = {"aligned": [{"symbol": "005930", "direction": "buy"}], "symbols": {"005930": {"reason": "r"}}}
-    assert "관망(hold)은 한도·현금·호가·찬성 의견의 가격 조건 때문에 주문이 불가능할 때만" in stream.trade_prompt(s, gate, "없음", "계기", 3)
+    assert "관망(hold)은 한도·현금·호가·찬성 의견의 가격 조건 때문에 주문이 불가능할 때만" in stream.trade_prompt(s, gate, "없음", "계기", DAY)
 
 
 def test_track_scores_judge_against_the_market(client, conn, broker, at_open):  # noqa: F811
@@ -496,3 +515,33 @@ def test_resume_route_needs_no_pin_but_checks_the_window(client, conn, broker, m
     _continuous(conn, broker, monkeypatch, "08:00")
     r = client.post("/api/invest/autopilot/resume")
     assert r.status_code == 409 and "자동 판단 시간" in r.json()["detail"]
+
+
+def test_move_text_separates_since_talk_and_today():
+    """급변 계기 문구 — '지난 대화 뒤' 변화와 오늘 등락을 나눠 적고 기준 시각을 붙인다 (#31)."""
+    from types import SimpleNamespace
+
+    from app.invest.debate import stream as st
+    from app.invest.marketdata.market import SampleMarket
+
+    p = SampleMarket()
+    daily = p.candles("005930", "1d", 3)
+    prev = daily[-2]["c"]
+    fake = SimpleNamespace(p=p, names={"005930": "삼성전자"})
+    text = st.Stream._move_text(fake, "005930", prev * 1.05, prev * 0.97, "2026-11-13T15:00:12+09:00")
+    assert text.startswith("삼성전자 지난 대화 뒤 -7.6%") and "오늘(전일 대비) -3.0%" in text and text.endswith("15:00:12 기준")
+
+
+def test_board_drops_stance_left_out_of_a_later_statement():
+    """다룬 종목인데 views 에서 빠지면 이전 입장을 지운다 — 옛 '매수'가 남아 안건이 되지 않게 (#28). 응답 실패는 그대로 둔다."""
+    from app.invest.debate.stream import Board
+
+    b, now = Board(), at("10:00")
+    b.update({"agent": "pm", "title": "포트폴리오 매니저", "views": [{"symbol": "316140", "stance": "buy", "confidence": 0.7}]}, now)
+    assert b.stance("pm", "316140", now) == "buy"
+    b.update({"agent": "pm", "title": "포트폴리오 매니저", "error": "timeout",
+              "views": [{"symbol": "316140", "stance": "none", "confidence": 0.0, "implicit": True}]}, now)
+    assert b.stance("pm", "316140", now) == "buy"                                     # 실패는 지우지 않는다
+    b.update({"agent": "pm", "title": "포트폴리오 매니저",
+              "views": [{"symbol": "316140", "stance": "none", "confidence": 0.0, "implicit": True}]}, now)
+    assert b.stance("pm", "316140", now) is None and b.fresh("316140", now) == []
