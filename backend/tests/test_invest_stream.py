@@ -21,7 +21,7 @@ from tests.test_invest_ai import Script
 from tests.test_invest_autopilot import at, conn  # noqa: F401 — fixture
 
 TITLES = [a["title"] for a in agents.DEFAULT_ROSTER if not a["executor"]]
-DAY = {"agent_orders_today": 3, "max_agent_orders_per_day": 6, "agent_orders_left_today": 3}
+DAY = {"agent_orders_today": 3}
 
 
 def _say(b, agent, stance, confidence, now, symbol="005930"):

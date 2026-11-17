@@ -63,7 +63,7 @@ def meeting(conn: sqlite3.Connection) -> dict:
     nodes.append(_n("gate", "게이트", "code", 3, 1.5, "종목마다 만장일치 / 과반", obj=agents.session_gate))
     if ex:
         nodes += [_n(ex["key"], ex["title"], "agent", 4.2, 1.5, ex.get("name", ""), agent=ex["key"]),
-                  _n("tool_check", "place_order 도구", "code", 5.4, 0.3, f"세션당 {agents.MAX_ORDERS}건 · 열린 종목만",
+                  _n("tool_check", "place_order 도구", "code", 5.4, 0.3, "종목당 1건 · 열린 종목만",
                      obj=agents._handlers),
                   _n("trading", "주문 검사", "code", 5.4, 1.5, "한도 · 호가 · 잔고 · 비중", obj=trading.place_order),
                   _n("approval", "승인 카드", "human", 5.4, 2.7, "승인 생략이 꺼져 있으면")]
@@ -103,7 +103,7 @@ def continuous(conn: sqlite3.Connection) -> dict:
               _e("poll", an[0]["key"] if an else "gate", "다시 묻기", "talk")]
     if ex:
         nodes += [_n(ex["key"], ex["title"], "agent", 5.4, 1.2, ex.get("name", ""), agent=ex["key"]),
-                  _n("trading", "주문 검사", "code", 5.4, 2.6, "한도 · 30분 같은 방향 1건 · 하루 6건", obj=trading.place_order),
+                  _n("trading", "주문 검사", "code", 5.4, 2.6, "금액 한도 · 30분 같은 방향 1건", obj=trading.place_order),
                   _n("toss_order", "토스 실계좌 주문", "data", 5.4, 4.0, "승인 없이 제출")]
         edges += [_e("poll", ex["key"], "최종 판단 통과"), _e(ex["key"], "trading", "주문", "order"),
                   _e("trading", "toss_order", "", "order"), _e(ex["key"], "triggers", "트레이더 제안", "talk")]

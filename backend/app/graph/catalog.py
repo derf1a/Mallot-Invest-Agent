@@ -95,7 +95,7 @@ def debate_agents(conn: sqlite3.Connection) -> list[dict]:
         if a["executor"]:
             rules += [{"title": "매도 수량", "text": agents.SELL_SIZING, "ref": ref(agents.trader_prompt)},
                       {"title": "주문 도구 검사", "ref": ref(agents._handlers),
-                       "text": f"게이트가 닫힌 종목 · 반대 방향 거절, 종목당 1건, 세션당 {agents.MAX_ORDERS}건, "
+                       "text": f"게이트가 닫힌 종목 · 반대 방향 거절, 종목당 1건, "
                                f"종목당 시도 {agents.MAX_ATTEMPTS_PER_SYMBOL}회"},
                       {"title": "주문 검사 (모든 주문이 지나는 한 곳)", "ref": ref(trading.place_order),
                        "text": "전체 중지 → 주문 조건(토스 키 · PIN) → 자동 주문이면 자동 주문 시간(정규장 +5분 ~ 끝 −15분) · "

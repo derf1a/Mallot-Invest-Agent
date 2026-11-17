@@ -50,7 +50,6 @@ STANCES = ("buy", "sell", "none")
 STANCE_KO = {"buy": "매수", "sell": "매도", "none": "의견 없음", "mixed": "종목별"}
 EXECUTOR_TOOL = "place_order"
 ROSTER_KEY = "invest_agent_roster"
-MAX_ORDERS = 3             # 세션당 주문 건수 상한
 INTRADAY_BARS = 600   # 분봉 수 — 시간외까지 받아 정규장만 추려도 그날 시가가 남게
 REPORT_DAYS = 7       # 이보다 오래된 뉴스 리포트는 도구가 내주지 않는다 (수동으로만 만들어져 판단 자료로 낡음)
 MAX_ATTEMPTS_PER_SYMBOL = 2
@@ -94,7 +93,6 @@ class Session:
     policy: str = ""                                        # 운용 목표 (관리자가 자문 에이전트와 정한 투자 정책) 글
     agenda: str = ""                                        # 이번 회의 안건 (일정 담당·비서·리스크 경보가 정함)
     system: str = ""                                        # 시스템 관리자가 맡은 이슈 (issues.brief) — 다시 요청하지 않게
-    max_orders: int = MAX_ORDERS                            # 이 세션에서 낼 수 있는 주문 수 (상시 운용은 하루 남은 건수까지)
     holdings: dict[str, dict] = field(default_factory=dict)  # 후보 중 보유 종목의 매도 점검 (exits.checks) — 종목 → 사실·신호
     sizes: dict[str, dict | None] = field(default_factory=dict)  # 종목 → 찬성 에이전트가 제안한 수량 (order_guard.proposals) — 주문 상한
 
@@ -396,9 +394,8 @@ def _handlers(s: Session, agent_key: str = "") -> dict[str, Callable[[dict], Awa
                 "held_quantity": held_qty, "sellable_gaps": gaps,
                 "open_orders": open_orders,  # 토스에 걸려 있는 미체결 주문 (이전 세션 · 앱 밖 주문 포함)
                 "open_orders_note": "판매 가능 수량 = 보유 − 미체결 매도. orders_this_session 은 이번 세션에서 낸 것만 셉니다",
-                "orders_this_session": len(s.orders), "max_orders_this_session": s.max_orders,
-                "orders_left_this_session": max(0, s.max_orders - len(s.orders)), **order_guard.day_status(s.conn),
-                "order_count_note": "세션 건수는 이번 회의 · 대화에서 낼 수 있는 수, agent_orders_*_today 는 오늘 하루 에이전트 주문(상시 운용의 하루 한도)",
+                "orders_this_session": len(s.orders), **order_guard.day_status(s.conn),
+                "order_count_note": "주문 횟수 한도는 없어요 — 금액 한도(건당 · 하루) · 비중 · 종목당 한 번 · 중복 방지만 검사합니다",
                 "today_orders": order_guard.today_orders(s.conn, s.symbols),
                 "trading_costs": fees.summary(),
                 "agent_order_needs_approval": not (s.auto_submit or config.agent_auto_approve(s.conn))}
@@ -454,8 +451,6 @@ def _handlers(s: Session, agent_key: str = "") -> dict[str, Callable[[dict], Awa
             return {"ok": False, "error": f"{s.name_of(sym)}: 게이트 방향({STANCE_KO[aligned[sym]]})과 다른 주문은 낼 수 없습니다"}
         if sym in s.orders:
             return {"ok": False, "error": f"{s.name_of(sym)}: 이번 세션에서 이미 주문했습니다 (종목당 1건)"}
-        if len(s.orders) >= s.max_orders:
-            return {"ok": False, "error": f"이번에 낼 수 있는 주문은 최대 {s.max_orders}건입니다"}
         if s.order_attempts.get(sym, 0) >= MAX_ATTEMPTS_PER_SYMBOL:
             return {"ok": False, "error": f"{s.name_of(sym)}: 주문 시도 횟수({MAX_ATTEMPTS_PER_SYMBOL}회)를 넘었습니다"}
         s.order_attempts[sym] = s.order_attempts.get(sym, 0) + 1
@@ -923,7 +918,7 @@ def trader_prompt(s: Session, transcript: list[dict], gate: dict, needs_approval
             + "\n\n할 일: get_portfolio·get_trading_limits·get_quote·get_orderbook 으로 계좌·한도·호가를 확인하고, 열린 종목마다 "
               "그 방향으로 주문할지 행동하지 않을지(hold) 정하세요. 주문한다면 한도와 비중 안에서 수량을 정하고(찬성한 에이전트의 제안 수량이 "
               "있으면 그 최대까지 — 넘으면 시스템이 거절) place_order 를 종목당 한 번 "
-              f"호출하세요(symbol 필수, 세션당 최대 {MAX_ORDERS}건, 닫힌 종목·반대 방향은 시스템이 거절). 거절되면 사유를 보고 한 번만 "
+              f"호출하세요(symbol 필수, 닫힌 종목·반대 방향은 시스템이 거절). 거절되면 사유를 보고 한 번만 "
               "수량을 줄여 다시 시도할 수 있습니다. " + ORDER_STYLE + " " + (SELL_SIZING + " " if any(x["direction"] == "sell" for x in gate["aligned"]) else "")
             + "마지막에 decisions(종목별 buy|sell|hold·quantity)·rationale 을 JSON 으로 답하세요. "
               "rationale 에는 이번에 내는 주문(없으면 관망 이유)만 짧게 — 지난 회의의 주문을 다시 적지 마세요.")

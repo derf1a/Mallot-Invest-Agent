@@ -14,8 +14,8 @@
 - 입장판(Board): 에이전트·종목별 최신 입장과 표의 무게(track.weight = 확신 × 지난 판단 성과). STALE_MIN 분이 지나면 빠진다.
   의견 없음은 무게가 없다 — 머릿수의 분모에 들어가 반대처럼 작동하지 않게.
 - 트레이더(언제든): 대화가 끝날 때마다 입장판을 본다 — 주요 의견 무게가 PROPOSE_MIN 이상이고 반대가 AGAINST_MAX 이하면 주문 안건이 된다.
-  승인 없이 제출, 같은 종목·같은 방향은 COOLDOWN_MIN 분에 한 번(반대 방향은 막지 않음 — 산 뒤 바로 손절할 수 있게), 하루 MAX_DAY_ORDERS 건
-  (오늘 에이전트 주문을 DB 로 셈 — order_guard.day_status, get_trading_limits 와 같은 수 · 같은 문구). 수량은 찬성한 에이전트가 낸 제안 수량
+  승인 없이 제출, 같은 종목·같은 방향은 COOLDOWN_MIN 분에 한 번(반대 방향은 막지 않음 — 산 뒤 바로 손절할 수 있게), 횟수 한도는 없음
+  (오늘 에이전트 주문 수는 보여 주기만 — order_guard.day_status, get_trading_limits 와 같은 수 · 같은 문구). 수량은 찬성한 에이전트가 낸 제안 수량
   (views 의 quantity)의 최대까지, 같은 실행·종목·방향의 중복은 place_order 도구가 막는다(order_guard). 오늘 낸 주문은 대화 프롬프트에 보인다.
   트레이더 점검 때는 계좌·입장판을 보고 스스로 사거나 팔 종목을 내놓을 수 있고 → 그 종목으로 바로 대화가 열려 입장판이 받쳐 주면 주문한다.
 - 필수 의견(주문 전): 트레이더에게 넘기기 전에 그 종목의 찬반이 없는 분석 에이전트 전원에게 묻는다. 의견 없음은 받지 않고 POLL_TRIES 번까지
@@ -63,7 +63,6 @@ AGAINST_MAX = 1.0    # 허용하는 반대 무게 — 보수적 기준 (보통 �
 MOVE = 0.02
 EXIT_CHECK_MIN = 5   # 보유 종목 매도 신호를 이만큼마다 다시 잰다
 COOLDOWN_MIN = 30
-MAX_DAY_ORDERS = order_guard.MAX_DAY_ORDERS
 POLL_TRIES = 2
 POLL_TURNS = 4
 ASK_GAP_MIN = 10
@@ -257,7 +256,7 @@ def trade_prompt(s: agents.Session, gate: dict, board: str, why: str, day: dict)
             + f"\n입장판:\n{board}\n\n할 일: get_portfolio·get_trading_limits·get_quote·get_orderbook 으로 계좌·한도·호가를 확인하고, 위 종목은 그 방향으로 주문하세요. "
               f"무게 기준을 넘긴 결정이라 수량·가격은 정하되 관망(hold)은 한도·현금·호가·찬성 의견의 가격 조건 때문에 주문이 불가능할 때만 그 이유와 함께 고르세요. "
               f"수량은 찬성한 에이전트의 제안 수량이 있으면 그 최대까지(넘으면 시스템이 거절). "
-              f"주문은 place_order 로 종목당 한 번(이번 대화 {s.max_orders}건까지 · {order_guard.day_text(day)}, 같은 종목·방향은 {COOLDOWN_MIN}분에 한 번). "
+              f"주문은 place_order 로 종목당 한 번({order_guard.day_text(day)}, 같은 종목·방향은 {COOLDOWN_MIN}분에 한 번). "
             + agents.ORDER_STYLE + " " + (agents.SELL_SIZING + " " if any(x["direction"] == "sell" for x in gate["aligned"]) else "")
             + f"운용 목표(주식 비중·종목 비중·손실 한도)를 지키세요. 마지막에 decisions·rationale 을 JSON 으로 — "
               "rationale 에는 이번에 내는 주문(없으면 관망 이유)만, 앞서 낸 주문은 다시 적지 마세요.")
@@ -627,7 +626,7 @@ class Stream:
         """트레이더 점검 — 스스로 사거나 팔 종목을 내놓으면 그 종목으로 대화가 열린다."""
         self.last_trader = now
         day = order_guard.day_status(self.conn)
-        if self._blocked() or day["agent_orders_left_today"] <= 0:  # 오늘 낼 주문이 남지 않았으면 제안해도 주문이 안 된다
+        if self._blocked():
             return
         mine = [c["symbol"] for c in self.candidates if c.get("held")]
         held = [sym for sym in exits.urgent(self.checks) if sym in mine] + [sym for sym in mine if sym not in self.checks]
@@ -663,8 +662,7 @@ class Stream:
     @trace.traced("step", "주문 판단")
     async def trade(self, now: datetime, why: str) -> None:
         day = order_guard.day_status(self.conn)  # 오늘 에이전트 주문을 DB 로 — 채널이 다시 열려도 같은 기준, get_trading_limits 와 같은 수
-        left = day["agent_orders_left_today"]
-        if left <= 0 or self._blocked():
+        if self._blocked():
             return
         syms = self.board.symbols(now)
         gate = self.board.gate(syms, self.names, now, self._held_of(syms))
@@ -682,7 +680,6 @@ class Stream:
         focus = [c for c in focus if c["symbol"] in {x["symbol"] for x in gate["aligned"]}]
         s = self._session(focus, f"주문 — {why}")
         s.gate = gate
-        s.max_orders = min(agents.MAX_ORDERS, left)
         s.sizes = {x["symbol"]: self.board.sizes(x["symbol"], x["direction"], now) for x in gate["aligned"]}
         self.chat({"type": "gate", "gate": gate, "names": names})
         self.chat({"type": "trader_start", "agent": self.executor["key"], "title": self.executor["title"]})

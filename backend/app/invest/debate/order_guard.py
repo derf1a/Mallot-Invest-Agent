@@ -2,8 +2,8 @@
 
 - 오늘 낸 주문(today_orders · orders_text): 실행 번호 · 시각 · 수량 · 상태. 상시 운용에서 같은 종목을 대화마다 다시 사면 보유가 늘어나는데,
   앞 주문이 보이지 않으면 에이전트가 '중복 주문'을 의심한다 — get_portfolio · get_trading_limits · 상시 운용 대화 프롬프트에 넣는다.
-- 하루 자동 주문 건수(day_status): 오늘 에이전트가 낸 주문(거절 빼고)을 DB 로 센다 — 상시 운용 채널이 다시 열려도 같은 기준.
-  상시 운용 안건 문구('오늘 남은 자동 주문 N건')와 get_trading_limits 가 이 하나를 쓴다. 세션 건수(이번 회의에서 낼 수 있는 수)와 따로.
+- 하루 자동 주문 건수(day_status): 오늘 에이전트가 낸 주문(거절 빼고)을 DB 로 센다 — 보여 주기만 하고 횟수로 막지 않는다.
+  상시 운용 안건 문구와 get_trading_limits 가 이 하나를 쓴다. 막는 것은 금액 한도(trading.place_order) · 종목당 한 번 · 중복이다.
 - 중복(duplicate): 같은 실행 · 종목 · 방향의 앞 주문이 아직 승인 대기 · 미체결이거나 DUP_MIN 분 안이면 거절.
 - 제안 수량(proposals · size_error): 분석 에이전트는 views 에 quantity(몇 주)를 낼 수 있다. 그 방향에 찬성한 사람이 낸 수량 중 가장 큰 것까지만
   주문한다. 아무도 수량을 내지 않았으면 막지 않는다(트레이더가 한도 · 현금 안에서 정한다 — 현금을 묶어 두는 규칙이 아니다).
@@ -16,7 +16,6 @@ from datetime import date, datetime, timedelta
 from app.invest.marketdata import market
 
 
-MAX_DAY_ORDERS = 6        # 상시 운용이 하루에 내는 자동 주문 최대 (오늘 에이전트 주문, 거절 빼고)
 DUP_MIN = 30              # 같은 실행 · 종목 · 방향의 주문은 이만큼 안에 다시 내지 않는다
 LIVE = ("pending_approval", "open", "partial")
 SIDE_KO = {"buy": "매수", "sell": "매도"}
@@ -42,16 +41,15 @@ def today_orders(conn: sqlite3.Connection, symbols: Iterable[str] | None = None,
 
 
 def day_status(conn: sqlite3.Connection) -> dict:
-    """하루 자동 주문 건수 — 오늘 에이전트가 낸 주문(거절 빼고)."""
+    """오늘 에이전트가 낸 주문 수(거절 빼고) — 횟수 한도는 없다."""
     n = conn.execute("SELECT COUNT(*) FROM invest_orders WHERE source = 'agent' AND status != 'rejected' AND date(created_at) = ?",
                      (_today(),)).fetchone()[0]
-    return {"agent_orders_today": n, "max_agent_orders_per_day": MAX_DAY_ORDERS, "agent_orders_left_today": max(0, MAX_DAY_ORDERS - n)}
+    return {"agent_orders_today": n}
 
 
 def day_text(day: dict) -> str:
-    """안건 · 프롬프트에 쓰는 같은 문구 — get_trading_limits 의 agent_orders_left_today 와 같은 수."""
-    return (f"오늘 남은 자동 주문 {day['agent_orders_left_today']}건(하루 {day['max_agent_orders_per_day']}건 중 "
-            f"{day['agent_orders_today']}건 냄 · get_trading_limits 의 agent_orders_left_today)")
+    """안건 · 프롬프트에 쓰는 같은 문구 — get_trading_limits 의 agent_orders_today 와 같은 수."""
+    return f"오늘 낸 자동 주문 {day['agent_orders_today']}건 · 횟수 한도 없음(금액 한도 · 비중 안에서)"
 
 
 def order_line(o: dict) -> str:
