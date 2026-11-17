@@ -24,7 +24,7 @@ core  ←  llm  ←  runs  ←  invest (broker · marketdata · analysis  ←  d
 | `app/invest/api*.py` · `jobs/` · `service.py` | 라우터 · 작업(agent_action · desk_research · news_report) · 20초마다 일정 확인 스레드 |
 | `app/graph` | 에이전트 카탈로그(`catalog.py`), 흐름 그래프(`topology.py`), 관찰 그래프(`observed.py`), LangGraph 내보내기 |
 | `app/tracing` | 트레이스 목록 · 상세 · 에이전트별 통계 API, LangSmith 내보내기(`langsmith.py`, `service.py`) |
-| `app/auth` | 관리자 비밀번호(scrypt) · 서명 쿠키 · 손님 공유 키(`security.py`), 요청마다 역할을 검사하는 미들웨어(`guard.py`), 비밀번호 정하기(`passwd.py`) — [share.md](share.md) |
+| `app/auth` | 관리자 비밀번호(scrypt) · 서명 쿠키 · 손님 공유 키(`security.py`), 요청마다 역할을 검사하는 미들웨어(`guard.py`, 홈 모드면 Mallot 홈에 묻는다), 비밀번호 정하기(`passwd.py`) — [share.md](share.md) |
 | `app/system` | 시스템 이슈 — 에이전트가 알린 시스템 문제 기록(`issues.py`), 시스템 관리자 마테우스가 묶고 답하기(`agent.py`, 10분마다 `service.py`), GitHub 올리기 · 맞추기(`github.py`, `MIA_GITHUB_TOKEN` 이 있을 때만) |
 | `app/share` | 휴대폰용 운용 현황 요약(`/share`) 데이터(`views.py`) — 자동 운용 상태 · 오늘 리서치 · 보고서 · 회의 대화 |
 
@@ -86,5 +86,7 @@ sequenceDiagram
 | `/api/health` | 살아 있는지 · DB 스키마 버전 |
 
 로그인이 켜져 있으면(관리자 비밀번호가 있거나 `MIA_PUBLIC=1`) 로그인 · 입장 · 상태 확인은 누구나, 관리자는 모두, 손님은 GET 만 연다 (`app/auth/guard.py`). 손님에게는 공유 링크 · `/docs` 도 닫고, 키 · `.env` 위치 · vLLM 주소는 라우터가 `core/access.is_viewer` 로 빼고 보낸다.
+
+`MIA_HOME_AUTH_URL` 이 있으면 홈 모드다 — 역할은 Mallot 홈이 쿠키 `mallot_session` 으로 정하고(`security.home_role`, 홈 장애면 503), 앱 로그인 · 공유 링크 API 는 409 다. `MIA_BASE_PATH`(예: `/invest`)가 있으면 맨 바깥 미들웨어 `app/core/base_path.py` 가 경로 접두사를 떼서 안쪽(guard · 라우터 · 화면 서빙)은 접두사 없는 경로만 본다. 자세한 건 [share.md](share.md) 6절.
 
 서버를 띄운 뒤 `http://localhost:8100/docs` 에서 전체 OpenAPI 를 볼 수 있다.

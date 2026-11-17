@@ -70,6 +70,13 @@ make share                                    # 이제 https://invest.example.co
 - **앱처럼 쓰기:** 공유 버튼 → 홈 화면에 추가하면 아이콘이 생기고, 주소창 없이 앱처럼 열린다.
 - **주문:** 관리자로 로그인해도 주문 PIN 은 따로 묻는다.
 
+## 6. 한 도메인 경로 모드 · Mallot 홈 통합 로그인 (선택)
+
+Mallot 앱 여럿을 한 도메인의 경로(`<도메인>/ledger/` · `/invest/` · `/lab/`)로 모으고 로그인은 Mallot 홈 하나로 할 때 쓴다. 아이폰 홈 화면 앱에서 다른 앱으로 넘어가도 같은 origin 이라 Safari 창이 뜨지 않는다. 둘 다 비우면 지금까지처럼 루트 · 앱 자체 로그인으로 돈다.
+
+- **`MIA_BASE_PATH=/invest`** — 터널은 경로를 떼지 않고 보낸다. 백엔드 맨 바깥 미들웨어(`app/core/base_path.py`)가 접두사를 떼고(`/invest` 만 오면 `/invest/` 로 307), 프론트는 같은 값으로 빌드해 `/invest/assets/…` · `/invest/api/…` 로 부른다 (`frontend/src/shared/base.ts`). 접두사 없는 요청(127.0.0.1:8100 직접 · 홈의 `/api/feed/*`)도 그대로 된다. `make serve` · `scripts/share.sh` 는 셸(systemd `EnvironmentFile`)에 없으면 `.env` 에서 읽어 빌드에 넘긴다.
+- **`MIA_HOME_AUTH_URL=http://127.0.0.1:8300`** — 홈 모드. 앱은 브라우저 쿠키 `mallot_session` 을 홈의 `GET /internal/auth/check?app=invest` 로 물어(`X-Mallot-Feed: MIA_FEED_TOKEN`, 2초 타임아웃, 10초 캐시) admin · viewer · 없음을 받는다. 손님 규칙은 위와 같고, 로그인이 안 되어 있으면 401 → 화면이 홈 `/login?next=…` 로 보낸다. 홈이 응답하지 않으면 503 으로 닫힌다. 터널을 거치지 않은 요청(이 컴퓨터 안 127.0.0.1)은 관리자다. 앱 로그인 · 로그아웃 · 손님 입장 · 공유 링크 API 는 409 이고, Settings > 공유 · 접근 은 홈 → 보안(`/security`) 링크만 보여 준다. 앱 비밀번호는 없어도 된다.
+
 ## 보안 메모
 
 - 쿠키는 HttpOnly · SameSite=Strict, https 면 Secure. 서명 비밀은 `MIA_SESSION_SECRET` 또는 `data/session_secret`(권한 600, git 제외)에 둔다.
