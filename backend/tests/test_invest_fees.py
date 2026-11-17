@@ -1,5 +1,7 @@
 """매매 비용 — 수수료 · 거래세 계산, 매수 가능 금액에 수수료 포함, 매도 점검의 비용 뺀 손익, 에이전트 프롬프트."""
 
+import asyncio
+
 import pytest
 
 from app.core.db import connect
@@ -77,3 +79,15 @@ def test_sellable_gap_explained_by_open_sell(conn, broker):
     g = gaps["005930"]
     assert (g["held"], g["sellable"], g["gap"], g["locked_by_open_sells"]) == (10.0, 7.0, 3.0, 3.0) and "3주를 잡고" in g["why"]
     assert "설명되지 않음" in trading.sellable_gaps({"005930": 10.0}, {"005930": 5.0}, opened)["005930"]["why"]
+
+
+def test_trading_limits_show_open_buys_outside_this_session(conn, broker):
+    """다른 대화에서 낸 아직 안 가진 종목의 미체결 매수도 get_trading_limits 의 open_orders 에 보이고, 그 금액이 open_buy_krw (#42)."""
+    m = SampleMarket()
+    low = snap_tick(m.quotes(["000660"])["000660"]["price"] * 0.8, "buy")
+    order = trading.place_order(conn, symbol="000660", side="buy", order_type="limit", price=low, quantity=2, confirm_live=True, market=m)
+    assert order["status"] == "open"                                                    # 낮게 걸어 둬 체결 안 됨
+    s = agents.Session(conn=conn, scope={"label": "x", "candidates": [{"symbol": "005930", "name": "삼성전자"}]}, run_id=None, provider=m)
+    lim = asyncio.run(agents._handlers(s)["get_trading_limits"]({}))
+    assert [(o["symbol"], o["side"], o["remaining"]) for o in lim["open_orders"]] == [("000660", "buy", 2.0)]
+    assert lim["open_buy_krw"] == round(low * 2) and [o["symbol"] for o in lim["today_orders"]] == ["000660"]

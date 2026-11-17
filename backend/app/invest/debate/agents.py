@@ -388,18 +388,22 @@ def _handlers(s: Session, agent_key: str = "") -> dict[str, Callable[[dict], Awa
         held_qty = {h["symbol"]: h["quantity"] for h in acct.summary()["holdings"] if h.get("currency") in (None, "KRW")}
         held = list(held_qty)  # 볼 종목에 없는 보유도 판매 가능 수량을 본다
         sellable = {**{c["symbol"]: 0.0 for c in s.candidates}, **{sym: acct.sellable(sym) for sym in held}}
-        open_orders = trading.open_broker_orders(s.conn, acct, sorted(set(held) | set(s.symbols)))
+        open_orders = trading.open_broker_orders(s.conn, acct)  # 종목으로 거르지 않는다 — 다른 대화에서 산 아직 안 가진 종목도 (#42)
         gaps = trading.sellable_gaps(held_qty, sellable, open_orders)  # 판매 가능 < 보유 — 왜 적은지 (#30)
+        open_buy = sum(o["remaining"] * (o["price"] or 0) for o in open_orders if o["side"] == "buy")
         return {"halted": config.halted(s.conn), **lim, "position_limit_basis": "평가액 × |레버리지 배수| (일반 종목은 평가액)",
                 "used_today_krw": round(trading._today_amount(s.conn)),
-                "buying_power": round(acct.buying_power()), "sellable_quantity": sellable,
+                "buying_power": round(acct.buying_power()), "open_buy_krw": round(open_buy),
+                "buying_power_note": "buying_power 는 토스 값 그대로예요. 미체결 매수(open_buy_krw)가 체결되면 그만큼 더 빠질 수 있으니 "
+                                     "새 매수는 buying_power − open_buy_krw 안에서 정하세요",
+                "sellable_quantity": sellable,
                 "held_quantity": held_qty, "sellable_gaps": gaps,
                 "open_orders": open_orders,  # 토스에 걸려 있는 미체결 주문 (이전 세션 · 앱 밖 주문 포함)
                 "open_orders_note": "판매 가능 수량 = 보유 − 미체결 매도. orders_this_session 은 이번 세션에서 낸 것만 셉니다",
                 "orders_this_session": len(s.orders), "max_orders_this_session": s.max_orders,
                 "orders_left_this_session": max(0, s.max_orders - len(s.orders)), **order_guard.day_status(s.conn),
                 "order_count_note": "세션 건수는 이번 회의 · 대화에서 낼 수 있는 수, agent_orders_*_today 는 오늘 하루 에이전트 주문(상시 운용의 하루 한도)",
-                "today_orders": order_guard.today_orders(s.conn, s.symbols),
+                "today_orders": order_guard.today_orders(s.conn),  # get_portfolio 와 같은 목록 (#42)
                 "trading_costs": fees.summary(),
                 "agent_order_needs_approval": not (s.auto_submit or config.agent_auto_approve(s.conn))}
 
