@@ -71,7 +71,7 @@ def isolated_env(tmp_path, monkeypatch):
     for key in ("TOSS_CLIENT_ID", "TOSS_CLIENT_SECRET", "TOSS_ACCOUNT_SEQ", "MIA_TRADING_PIN", "ANTHROPIC_API_KEY",
                 "DART_API_KEY", "MIA_VLLM_URL", "MIA_VLLM_API_KEY", "LANGSMITH_API_KEY", "MIA_MODELS_DIR",
                 "MIA_ADMIN_PASSWORD", "MIA_ADMIN_PASSWORD_HASH", "MIA_FEED_TOKEN", "MIA_PUBLIC", "MIA_SESSION_SECRET", "MIA_AUTOPILOT",
-                "MIA_GITHUB_TOKEN", "MIA_GITHUB_REPO"):
+                "MIA_GITHUB_TOKEN", "MIA_GITHUB_REPO", "MIA_BASE_PATH", "MIA_HOME_AUTH_URL"):
         monkeypatch.delenv(key, raising=False)
     from app.auth import security
     from app.invest.broker import config, toss
@@ -82,6 +82,7 @@ def isolated_env(tmp_path, monkeypatch):
     toss.clear_token_cache()
     config.reset_pin_failures()
     security.reset_failures()
+    security.clear_home_cache()
     share_views.clear_cache()
     yield
     market.clear_cache()
