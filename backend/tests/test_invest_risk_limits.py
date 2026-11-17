@@ -91,6 +91,21 @@ def test_agents_read_and_change_limits_with_tools(conn, broker, at_open):  # noq
 
 def test_equity_target_is_fixed_at_100(conn):
     assert policy.get(conn)["equity_target"] == 100
-    out = policy.save(conn, {"equity_target": 70, "target_return": 10}, by="assistant")
-    assert out["policy"]["equity_target"] == 100
+    out = policy.save(conn, {"equity_target": 70, "target_return": 10}, by="assistant", reason="100%→70%")
+    assert out["policy"]["equity_target"] == 100 and out["fixed"] == ["주식 비중 목표"]
     assert "주식 비중 100%" in policy.text(policy.get(conn))
+    assert [c["field"] for c in policy.history(conn)[-1]["changes"]] == ["target_return"]
+    assert policy.history(conn)[-1]["reason"] == "100%→70% (고정이라 바꾸지 않음: 주식 비중 목표)"   # 기록이 실제와 맞게 (#43)
+
+
+@pytest.mark.parametrize("value", [0, "0", 1, None])
+def test_update_policy_says_equity_target_is_fixed(conn, value):
+    """equity_target 만 0 · "0" · 1 · null 로 바꾸려 하면 ok:true · '바뀐 것 없음' 이 아니라 고정이라 못 바꾼다고 답한다 (#43)."""
+    from app.invest.advice import assistant
+    s = agents.Session(conn=conn, scope={"label": "비서", "candidates": []}, run_id=None, provider=SampleMarket())
+    tools = {t.name: t for t in assistant.build_tools(conn, s, [], None)}
+    out = asyncio.run(tools["update_policy"].handler({"changes": {"equity_target": value}, "reason": "현금 늘리기"}))
+    assert out["ok"] is False and "100% 고정" in out["not_changed"]
+    both = asyncio.run(tools["update_policy"].handler({"changes": {"equity_target": value, "turnover": "low"}}))
+    assert both["ok"] and both["changed"] == ["매매 빈도: 없음 → 가끔"] and "고정" in both["not_changed"]
+    assert policy.get(conn)["equity_target"] == 100
