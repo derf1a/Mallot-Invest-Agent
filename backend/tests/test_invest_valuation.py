@@ -522,3 +522,11 @@ def test_primary_sector_prefers_where_stock_leads_relative_to_size():
     assert idx["018260"] == {"sector": "IT", "sectors": ["IT", "운송"], "name": "삼성에스디에스", "market_cap": 1e13, "trading_amount": 1e9}
     assert idx["005930"]["sector"] == "반도체" and idx["005930"]["sectors"] == ["반도체", "스마트폰"]
     assert idx["a0000"]["sectors"] == ["운송"]
+
+
+def test_primary_sector_prefers_where_stock_is_the_largest():
+    """시가총액 1위인 섹터가 대표 — KT&G 는 의료(283개) 2위보다 음식료(125개) 1위 (#41)."""
+    filler = lambda n, tag: [{"symbol": f"{tag}{i:04d}"} for i in range(n)]  # noqa: E731
+    ktng = {"symbol": "033780", "name": "KT&G"}
+    idx = valuation.primary_sectors([("의료", filler(1, "a") + [ktng] + filler(281, "b")), ("음식료", [ktng] + filler(124, "c"))])
+    assert idx["033780"]["sector"] == "음식료" and idx["033780"]["sectors"] == ["음식료", "의료"]

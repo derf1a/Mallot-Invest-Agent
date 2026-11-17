@@ -619,7 +619,13 @@ def build_tools(conn: sqlite3.Connection, s: agents.Session, used: list[str], mo
         note("update_policy")
         for d in out["diff"]:
             changed(f"운용 목표 {d['label']}", d["before"], d["after"])
-        return {"ok": True, "changed": [f"{d['label']}: {d['before']} → {d['after']}" for d in out["diff"]] or "바뀐 것 없음"}
+        res = {"ok": True, "changed": [f"{d['label']}: {d['before']} → {d['after']}" for d in out["diff"]] or "바뀐 것 없음"}
+        if out["fixed"]:  # 고정 항목을 바꾸려 했으면 ok 로 숨기지 않는다 (#43)
+            res["not_changed"] = (f"{', '.join(out['fixed'])}는 {policy.EQUITY_TARGET_PCT:g}% 고정이라 바꿀 수 없어요 — "
+                                  "예수금은 다음 매수를 기다리는 돈이고, 위험은 종목 · 섹터 비중과 손실 한도로 줄여요")
+            if not out["diff"]:
+                res["ok"] = False
+        return res
 
     async def start_advice(a: dict) -> dict:
         from app.invest.advice import advisor
@@ -717,8 +723,8 @@ def build_tools(conn: sqlite3.Connection, s: agents.Session, used: list[str], mo
         _tool("get_policy", "운용 목표(투자 정책) — 항목별 지금 값, 아직 안 정한 항목, 최근 바뀐 기록, 항목 값 형식.", {}, [], get_policy),
         _tool("update_policy", "운용 목표를 고친다. changes = {항목: 값} — objective(absolute·relative·growth·income·preserve), "
               "target_return(연 %), benchmark(none·KOSPI·KOSDAQ), horizon(short·mid·long), turnover(low·mid·high), "
-              "risk(conservative·balanced·aggressive), max_drawdown(%), equity_target(%), max_position(%), prefer·avoid(글 목록), notes. "
-              "값을 null 로 주면 지운다. reason = 왜.",
+              "risk(conservative·balanced·aggressive), max_drawdown(%), max_position(%), prefer·avoid(글 목록), notes. "
+              "값을 null 로 주면 지운다. 주식 비중 목표(equity_target)는 100% 고정이라 바꿀 수 없다. reason = 왜.",
               {"changes": {"type": "object"}, "reason": {"type": "string"}}, ["changes"], update_policy),
         _tool("start_advice", "자문 에이전트 상담을 연다 — 이 답 뒤로 관리자 말은 자문 에이전트가 받아 운용 목표를 하나씩 묻는다. "
               "topics 로 물을 항목만 고를 수 있다(비우면 전부).",
