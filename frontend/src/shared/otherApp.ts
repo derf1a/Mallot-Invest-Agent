@@ -2,7 +2,10 @@
  * 다른 Mallot 앱(가계부 · 투자 · 실험실) 주소 — 지금 주소에서 만든다. 도메인을 코드에 적지 않는다.
  * ledger.<도메인> ↔ invest.<도메인> ↔ lab.<도메인>, 이 컴퓨터에서는 백엔드 포트 8200 · 8100 · 8400, 개발 서버 3200 · 3100 · 3400.
  * 모르면 빈 목록 (링크를 숨긴다). 로그인은 앱마다 따로라, 처음 넘어가면 그쪽에서 한 번 로그인한다.
+ * 경로 접두사(MIA_BASE_PATH)로 빌드했으면 한 도메인의 경로 모드다 — 같은 origin 의 /ledger/ · /invest/ · /lab/, 홈은 /.
  */
+import { BASE_URL } from './base'
+
 export interface OtherApp {
   key: AppKey
   label: string
@@ -30,7 +33,14 @@ function current(here: Location): { key: AppKey; rest: string[]; port?: 'serve' 
   return null
 }
 
-export function otherApps(here: Location = window.location): OtherApp[] {
+/** 경로 모드인가 — base 가 '/' 가 아니면 */
+const pathMode = (base: string) => base !== '/'
+
+export function otherApps(here: Location = window.location, base: string = BASE_URL): OtherApp[] {
+  if (pathMode(base)) {
+    const self = APPS.find((a) => base === `/${a.key}/`)?.key
+    return APPS.filter((a) => a.key !== self).map((a) => ({ key: a.key, label: a.label, url: `/${a.key}/` }))
+  }
   const at = current(here)
   if (!at) return []
   return APPS.filter((a) => a.key !== at.key).map((a) => ({
@@ -43,7 +53,8 @@ export function otherApps(here: Location = window.location): OtherApp[] {
 }
 
 /** 맨 도메인의 Mallot 홈 (ledger.<도메인> → <도메인>). 하위 도메인이 아니면 null (링크를 숨긴다) */
-export function portalUrl(here: Location = window.location): string | null {
+export function portalUrl(here: Location = window.location, base: string = BASE_URL): string | null {
+  if (pathMode(base)) return '/'
   const at = current(here)
   return at && !at.port && at.rest.length >= 2 ? `${here.protocol}//${at.rest.join('.')}/` : null
 }

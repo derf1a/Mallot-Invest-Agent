@@ -1,5 +1,6 @@
 /** 투자 탭 API 타입·클라이언트 */
 import type { Run } from '../runs/api'
+import { withBase } from '../../shared/base'
 
 export type Side = 'buy' | 'sell'
 export type Stance = 'buy' | 'sell' | 'none'
@@ -975,7 +976,7 @@ async function request<T>(method: string, url: string, body?: unknown, retried =
     headers['Content-Type'] = 'application/json'
   }
   if (tradingPin && method !== 'GET') headers['X-Trading-Pin'] = tradingPin
-  const res = await fetch(url, init)
+  const res = await fetch(withBase(url), init)  // 경로 접두사(MIA_BASE_PATH)를 붙인다
   if (!res.ok) {
     let message = `요청 실패 (${res.status})`
     let checks: string[] = []

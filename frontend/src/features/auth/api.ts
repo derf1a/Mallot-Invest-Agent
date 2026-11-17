@@ -10,6 +10,10 @@ export interface Me {
   has_password: boolean
   role: Role
   share_enabled: boolean
+  /** 홈 모드(MIA_HOME_AUTH_URL) — 로그인 · 손님 공유는 Mallot 홈이 맡는다. 없으면 앱 자체 로그인 */
+  home?: boolean
+  login_url?: string
+  logout_url?: string
 }
 
 export interface ShareLink { enabled: boolean; key: string; path: string; rotated_at: number | null }
@@ -26,6 +30,20 @@ export interface AccessEvent {
 export interface AccessAlert { id: number; day: string; ip: string; country: string | null; reason: string; created_at: string; acked_at: string | null }
 export interface AccessView {
   days: number; home_country: string; ips: AccessIp[]; events: AccessEvent[]; alerts: AccessAlert[]; open_alerts: number; note: string
+}
+
+/** 홈 모드 — Mallot 홈 로그인 화면으로 (돌아올 곳은 지금 주소) */
+export function goHomeLogin(me: Me) {
+  window.location.href = `${me.login_url ?? '/login'}?next=${encodeURIComponent(window.location.pathname + window.location.search)}`
+}
+
+/** 홈 모드 로그아웃 — 홈의 로그아웃을 부르고 홈으로 */
+export async function homeLogout(me: Me) {
+  try {
+    await fetch(me.logout_url ?? '/logout', { method: 'POST', credentials: 'same-origin' })
+  } finally {
+    window.location.href = '/'
+  }
 }
 
 export const authApi = {

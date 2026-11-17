@@ -9,8 +9,16 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PORT="${PORT:-8100}"
 CONF="${TUNNEL_CONFIG:-$HOME/.cloudflared/mallot-invest.yml}"
 mkdir -p "$ROOT/data"
+# 경로 접두사(MIA_BASE_PATH, 예: /invest) — 셸 · systemd EnvironmentFile 이 우선, 없으면 .env 에서. 프론트 빌드와 백엔드가 같은 값을 쓴다
+if [ -z "${MIA_BASE_PATH:-}" ] && [ -f "$ROOT/.env" ]; then
+  MIA_BASE_PATH="$(sed -n 's/^MIA_BASE_PATH=//p' "$ROOT/.env" | tail -1 | tr -d "\"'")"
+fi
+export MIA_BASE_PATH="${MIA_BASE_PATH:-}"
 
-if ! grep -qE '^MIA_ADMIN_PASSWORD(_HASH)?=.+' "$ROOT/.env" 2>/dev/null && [ -z "${MIA_ADMIN_PASSWORD_HASH:-}${MIA_ADMIN_PASSWORD:-}" ]; then
+# 홈 모드(MIA_HOME_AUTH_URL — 로그인은 Mallot 홈)면 앱 비밀번호가 없어도 된다
+home_auth="${MIA_HOME_AUTH_URL:-}"
+[ -z "$home_auth" ] && home_auth="$(sed -n 's/^MIA_HOME_AUTH_URL=//p' "$ROOT/.env" 2>/dev/null | tail -1 || true)"
+if [ -z "$home_auth" ] && ! grep -qE '^MIA_ADMIN_PASSWORD(_HASH)?=.+' "$ROOT/.env" 2>/dev/null && [ -z "${MIA_ADMIN_PASSWORD_HASH:-}${MIA_ADMIN_PASSWORD:-}" ]; then
   echo "[share] 관리자 비밀번호가 없어요 — 먼저: cd backend && uv run python -m app.auth.passwd" >&2
   exit 1
 fi
@@ -30,7 +38,7 @@ trap cleanup INT TERM EXIT
 (cd "$ROOT/backend" && MIA_PUBLIC=1 exec uv run uvicorn app.main:app --host 127.0.0.1 --port "$PORT") &
 pids+=($!)
 for _ in $(seq 1 60); do curl -fsS "http://127.0.0.1:$PORT/api/health" >/dev/null 2>&1 && break; sleep 1; done
-echo "[share] 서버 http://127.0.0.1:$PORT (로그인 필수)"
+echo "[share] 서버 http://127.0.0.1:$PORT${MIA_BASE_PATH:+$MIA_BASE_PATH/} (로그인 필수${home_auth:+ — Mallot 홈 로그인})"
 
 if [ "${SHARE_TUNNEL:-1}" = "0" ]; then
   echo "[share] 터널 없이 서버만 (SHARE_TUNNEL=0)"
@@ -57,5 +65,5 @@ else
     echo "[share] 임시 주소를 받지 못했어요 — $log 를 보세요" >&2
   fi
 fi
-echo "[share] 손님 링크는 관리자 화면 Settings > 공유 · 접근 에서"
+if [ -n "$home_auth" ]; then echo "[share] 로그인 · 손님 공유는 Mallot 홈 → 보안에서"; else echo "[share] 손님 링크는 관리자 화면 Settings > 공유 · 접근 에서"; fi
 while for p in "${pids[@]}"; do kill -0 "$p" 2>/dev/null || exit 1; done; do sleep 2; done

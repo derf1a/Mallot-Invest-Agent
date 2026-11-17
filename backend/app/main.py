@@ -14,6 +14,7 @@ from app import registry
 from app.auth import access_log
 from app.auth.guard import guard
 from app.core import envfile, metrics, trace
+from app.core.base_path import BasePathMiddleware
 from app.core.db import connect, init_db
 from app.llm import local
 from app.runs.runner import recover_interrupted
@@ -44,7 +45,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(title="Mallot Invest Agent", lifespan=lifespan)
 app.middleware("http")(guard)  # 역할 검사 — 관리자 API 는 관리자만, 손님은 /api/share/* 만 (app/auth)
-app.middleware("http")(access_log.middleware)  # 접속 기록 · 한국 밖 경보 — 맨 바깥, 거절된 요청까지 남긴다
+app.middleware("http")(access_log.middleware)  # 접속 기록 · 한국 밖 경보 — guard 바깥, 거절된 요청까지 남긴다
 
 
 @app.middleware("http")
@@ -61,6 +62,10 @@ async def request_metrics(request: Request, call_next):
             route = request.scope.get("route")
             metrics.observe(request.method, getattr(route, "path", request.url.path), status,
                             (time.perf_counter() - started) * 1000)
+
+
+# 경로 접두사(MIA_BASE_PATH) 떼기 — 마지막에 더해서 맨 바깥이다. 안쪽(통계 · 접속 기록 · guard · 라우터)은 모두 뗀 경로를 본다
+app.add_middleware(BasePathMiddleware)
 
 
 @app.get("/api/health")

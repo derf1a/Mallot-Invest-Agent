@@ -136,7 +136,7 @@ export default function Layout({ onLogout, viewer }: { onLogout?: () => void; vi
             </a>
           )}
           {OTHER_APPS.map((o) => (
-            <a key={o.key} className="nav-link small app-switch" href={o.url} title={`${o.label} — 로그인은 따로예요`}>
+            <a key={o.key} className="nav-link small app-switch" href={o.url} title={o.url.startsWith('/') ? o.label : `${o.label} — 로그인은 따로예요`}>
               <span className="nav-icon" aria-hidden="true">⇄</span>
               <span>{o.label}</span>
             </a>

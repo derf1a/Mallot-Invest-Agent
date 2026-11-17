@@ -8,6 +8,8 @@
 - 쿠키는 서명한 토큰(역할 · 만료). 관리자 토큰은 비밀번호에서, 손님 토큰은 공유 키에서 서명 키를 만든다
   → 비밀번호를 바꾸거나 공유 키를 새로 만들면 이전 쿠키가 모두 끊긴다.
 - 로그인은 5번 틀리면 15분 잠근다 (프로세스 메모리, 서버 전체).
+- 홈 모드(MIA_HOME_AUTH_URL 이 있을 때): 로그인 · 손님 공유는 Mallot 홈이 맡는다. 앱은 브라우저 쿠키 mallot_session 이
+  누구인지 홈에 묻기만 한다 (home_role). 위의 앱 자체 로그인 · 공유 링크는 쓰지 않는다 (guard 가 409).
 """
 
 import base64
@@ -19,6 +21,10 @@ import secrets
 import sqlite3
 import threading
 import time
+import urllib.error
+import urllib.parse
+import urllib.request
+from collections import OrderedDict
 from pathlib import Path
 
 from app.core.db import connect, data_dir
@@ -32,6 +38,14 @@ LOCK_SEC = 15 * 60
 MIN_PASSWORD = 10
 S_SHARE = "share"
 PROXY_HEADERS = ("cf-connecting-ip", "x-forwarded-for", "x-real-ip", "forwarded")
+HOME_ENV = "MIA_HOME_AUTH_URL"
+HOME_COOKIE = "mallot_session"
+HOME_APP = "invest"
+HOME_TIMEOUT = 2.0
+HOME_CACHE_SEC = 10.0
+HOME_CACHE_MAX = 1000
+HOME_LOGIN_URL = "/login"
+HOME_LOGOUT_URL = "/logout"
 
 _lock = threading.Lock()
 _fails: dict = {"count": 0, "until": 0.0}
@@ -211,3 +225,62 @@ def login(password: str) -> bool:
 def reset_failures() -> None:
     with _lock:
         _fails.update(count=0, until=0.0)
+
+
+# ---------- 홈 통합 로그인 (MIA_HOME_AUTH_URL) ----------
+
+class HomeUnavailable(Exception):
+    """홈이 응답하지 않거나 오류 — guard 가 503 으로 닫는다."""
+
+
+_NO_PROXY = urllib.request.build_opener(urllib.request.ProxyHandler({}))  # 홈은 이 컴퓨터 안 — 셸의 http_proxy 를 타지 않는다
+_home_cache: OrderedDict[str, tuple[float, str | None]] = OrderedDict()
+
+
+def home_url() -> str:
+    return os.environ.get(HOME_ENV, "").strip().rstrip("/")
+
+
+def home_mode() -> bool:
+    return bool(home_url())
+
+
+def _ask_home(session: str) -> str | None:
+    """GET {홈}/internal/auth/check?app=invest — 열쇠(X-Mallot-Feed)와 세션을 보내 역할을 받는다. 실패면 HomeUnavailable."""
+    url = f"{home_url()}/internal/auth/check?{urllib.parse.urlencode({'app': HOME_APP})}"
+    req = urllib.request.Request(url, headers={"X-Mallot-Feed": os.environ.get("MIA_FEED_TOKEN", ""),
+                                               "X-Mallot-Session": session, "Accept": "application/json"})
+    try:
+        with _NO_PROXY.open(req, timeout=HOME_TIMEOUT) as res:
+            data = json.loads(res.read())
+    except (urllib.error.URLError, OSError, ValueError) as e:  # HTTPError(401 등)도 URLError 다
+        raise HomeUnavailable(str(e)) from None
+    if not isinstance(data, dict):
+        raise HomeUnavailable("홈 응답 모양이 달라요")
+    role = data.get("role")
+    return role if role in ("admin", "viewer") else None
+
+
+def home_role(session: str | None) -> str | None:
+    """브라우저 쿠키 mallot_session 값의 역할: admin · viewer · None. 쿠키가 없으면 묻지 않는다.
+    sha256(세션) 키로 10초 캐시한다 (프로세스 메모리, 1000개까지). 홈 장애면 HomeUnavailable."""
+    if not session:
+        return None
+    key = hashlib.sha256(session.encode()).hexdigest()
+    now = time.monotonic()
+    with _lock:
+        hit = _home_cache.get(key)
+        if hit and hit[0] > now:
+            return hit[1]
+    role = _ask_home(session)
+    with _lock:
+        _home_cache[key] = (now + HOME_CACHE_SEC, role)
+        _home_cache.move_to_end(key)
+        while len(_home_cache) > HOME_CACHE_MAX:
+            _home_cache.popitem(last=False)
+    return role
+
+
+def clear_home_cache() -> None:
+    with _lock:
+        _home_cache.clear()

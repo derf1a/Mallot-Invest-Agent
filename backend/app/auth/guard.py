@@ -7,6 +7,9 @@
 - 쓰기 요청(POST · PUT · DELETE)은 Origin 이 있으면 이 사이트여야 한다 (다른 사이트에서 몰래 보내는 요청 막기).
 - Mallot 홈 서버는 열쇠(MIA_FEED_TOKEN)로 /api/feed/* 만 읽는다 (system/feed.token_ok).
 - 역할은 request.state.role 에 넣는다 (라우터가 손님용으로 값을 줄일 때).
+- 홈 모드(MIA_HOME_AUTH_URL): 역할은 Mallot 홈이 쿠키 mallot_session 으로 정한다 (security.home_role).
+  이 컴퓨터 안에서 직접 연 요청(프록시 아님)은 관리자. 앱 자체 로그인 · 공유 링크 API 는 409.
+  홈이 응답하지 않으면 503 (닫힌 쪽으로 실패).
 """
 
 from urllib.parse import urlsplit
@@ -21,6 +24,8 @@ OPEN_API = {"/api/health", "/api/auth/login", "/api/auth/logout", "/api/auth/me"
 DOC_PATHS = ("/docs", "/redoc", "/openapi.json")
 VIEWER_CLOSED = ("/api/auth/share", "/api/auth/access", *DOC_PATHS)  # 손님에게는 읽기도 닫는다 (접속 기록 포함)
 READ_METHODS = ("GET", "HEAD", "OPTIONS")
+# 홈 모드에서는 홈이 맡는 것 — 앱 로그인 · 로그아웃 · 손님 입장 · 공유 링크 관리
+HOME_MANAGED = ("/api/auth/login", "/api/auth/logout", "/api/auth/share")
 
 
 def _same_origin(request: Request) -> bool:
@@ -43,6 +48,8 @@ async def guard(request: Request, call_next):
     if token_ok(request.headers, request.method, path, security.proxied(request.headers)):
         request.state.role = "feed"  # Mallot 홈 서버 (이 컴퓨터 안, 열쇠 · GET /api/feed/* 만)
         return await call_next(request)
+    if security.home_mode():
+        return await _home_guard(request, call_next, path)
     if not security.enabled():
         if security.proxied(request.headers):
             return _deny(403, "관리자 비밀번호 없이 외부에서 열 수 없어요 — MIA_ADMIN_PASSWORD_HASH 를 정하세요")
@@ -59,6 +66,36 @@ async def guard(request: Request, call_next):
         return await call_next(request)
     if role != "viewer":
         return _deny(401, "로그인하거나 공유 링크로 들어와 주세요")
+    if not reading:
+        return _deny(403, "읽기 전용이에요 — 손님은 설정 · 주문 · 대화를 바꿀 수 없어요")
+    if path.startswith(VIEWER_CLOSED):
+        return _deny(403, "관리자만 볼 수 있어요")
+    return await call_next(request)
+
+
+async def _home_guard(request: Request, call_next, path: str):
+    """홈 모드 — 역할은 Mallot 홈에 묻는다. 손님 규칙은 앱 자체 로그인 때와 같다."""
+    if path in HOME_MANAGED or path.startswith("/api/auth/share/"):
+        return _deny(409, "Mallot 홈에서 로그인 · 관리해요")
+    reading = request.method in READ_METHODS
+    if not reading and not _same_origin(request):
+        return _deny(403, "다른 사이트에서 온 요청이에요")
+    if path == "/api/health":
+        return await call_next(request)
+    if not security.proxied(request.headers):
+        role = "admin"  # 이 컴퓨터 안에서 127.0.0.1 로 직접 연 요청 (비밀번호가 꺼져 있을 때와 같다)
+    else:
+        try:
+            role = security.home_role(request.cookies.get(security.HOME_COOKIE))
+        except security.HomeUnavailable:
+            return _deny(503, "Mallot 홈 로그인 서버에 연결하지 못했어요")
+    request.state.role = role
+    if path == "/api/auth/me":  # 로그인 전에도 내 역할(None)을 알려 준다
+        return await call_next(request)
+    if role == "admin":
+        return await call_next(request)
+    if role != "viewer":
+        return JSONResponse({"detail": "로그인해 주세요", "login_url": security.HOME_LOGIN_URL}, status_code=401)
     if not reading:
         return _deny(403, "읽기 전용이에요 — 손님은 설정 · 주문 · 대화를 바꿀 수 없어요")
     if path.startswith(VIEWER_CLOSED):

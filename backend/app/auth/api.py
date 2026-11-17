@@ -37,6 +37,11 @@ def _set(response: Response, request: Request, name: str, value: str, ttl: int) 
 
 @router.get("/me")
 def me(request: Request, conn: Conn) -> dict:
+    if security.home_mode():
+        # 홈 모드 — 역할은 guard 가 홈에 물어 둔 값. 앞의 필드는 프론트가 깨지지 않게 같이 둔다 (앱 로그인 · 공유는 없음)
+        return {"auth": True, "public": False, "has_password": False, "role": getattr(request.state, "role", None),
+                "share_enabled": False, "home": True, "login_url": security.HOME_LOGIN_URL,
+                "logout_url": security.HOME_LOGOUT_URL}
     on = security.enabled()
     role = security.role_of(request.cookies) if on else "admin"
     return {"auth": on, "public": security.public(), "has_password": security.has_password(), "role": role,
