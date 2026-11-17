@@ -32,8 +32,8 @@ def _same_origin(request: Request) -> bool:
     origin = request.headers.get("origin")
     if not origin:
         return True
-    host = request.headers.get("x-forwarded-host") or request.headers.get("host") or ""
-    return urlsplit(origin).netloc == host
+    host = (request.headers.get("host") or "").lower()  # Host 만 — X-Forwarded-Host 는 손님이 마음대로 보낼 수 있다
+    return urlsplit(origin).netloc.lower() == host
 
 
 def _deny(status: int, detail: str) -> JSONResponse:

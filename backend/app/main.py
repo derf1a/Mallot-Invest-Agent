@@ -48,6 +48,23 @@ app.middleware("http")(guard)  # 역할 검사 — 관리자 API 는 관리자�
 app.middleware("http")(access_log.middleware)  # 접속 기록 · 한국 밖 경보 — guard 바깥, 거절된 요청까지 남긴다
 
 
+SECURITY_HEADERS = {
+    "Strict-Transport-Security": "max-age=31536000",   # https 로만
+    "X-Frame-Options": "DENY",                         # 다른 사이트 iframe 에 넣어 버튼을 누르게 하는 것 막기
+    "Content-Security-Policy": "frame-ancestors 'none'; base-uri 'self'; object-src 'none'",
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "same-origin",
+}
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    response = await call_next(request)
+    for k, v in SECURITY_HEADERS.items():
+        response.headers.setdefault(k, v)
+    return response
+
+
 @app.middleware("http")
 async def request_metrics(request: Request, call_next):
     """API 요청 통계. 경로 템플릿 단위로 묶고, 정적 파일·화면은 세지 않는다."""
