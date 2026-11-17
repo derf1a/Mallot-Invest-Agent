@@ -524,7 +524,8 @@ def brief(v: dict | None) -> dict | None:
 def primary_sectors(lists: Iterable[tuple[str, list[dict]]]) -> dict[str, dict]:
     """(대분류 섹터 이름, 구성 주식 — 시가총액순) → {종목: {sector, sectors, name, market_cap, trading_amount}}.
     한 종목이 여러 대분류에 들면(삼성에스디에스: IT·운송) 그 섹터 안에서 시가총액 순위가 상대적으로 가장 앞인 곳을 대표 섹터로 —
-    (순위 + 1) / (구성 수 + 1) 이 가장 작은 곳. 큰 섹터에서 앞자리일수록 그 업종을 대표한다고 본다. sectors 는 대표 섹터부터 모두."""
+    (순위 + 1) / (구성 수 + 1) 이 가장 작은 곳. 큰 섹터에서 앞자리일수록 그 업종을 대표한다고 본다. sectors 는 대표 섹터부터 모두.
+    다만 시가총액 1위인 섹터가 있으면 그곳이 먼저다 — KT&G 는 음식료 1위 · 의료 2위인데 비율만 보면 큰 의료가 이겼다 (#41)."""
     seen: dict[str, list[tuple[float, int, str]]] = {}
     first: dict[str, dict] = {}
     for order, (name, rows) in enumerate(lists):
@@ -532,11 +533,11 @@ def primary_sectors(lists: Iterable[tuple[str, list[dict]]]) -> dict[str, dict]:
             sym = r.get("symbol")
             if not sym:
                 continue
-            seen.setdefault(sym, []).append(((rank + 1) / (len(rows) + 1), order, name))
+            seen.setdefault(sym, []).append((rank > 0, (rank + 1) / (len(rows) + 1), order, name))
             first.setdefault(sym, r)
     out: dict[str, dict] = {}
     for sym, hits in seen.items():
-        names = list(dict.fromkeys(n for _, _, n in sorted(hits)))
+        names = list(dict.fromkeys(n for *_, n in sorted(hits)))
         r = first[sym]
         out[sym] = {"sector": names[0], "sectors": names, "name": r.get("name") or "", "market_cap": r.get("market_cap"),
                     "trading_amount": r.get("trading_amount")}

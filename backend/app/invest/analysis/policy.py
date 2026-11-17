@@ -154,15 +154,19 @@ def show(field: str, value: object) -> str:
 
 
 def save(conn: sqlite3.Connection, changes: dict, *, by: str, reason: str = "", now: datetime | None = None) -> dict:
-    """항목들을 바꾼다 → {policy, diff: [{field, label, before, after}]}. 하나라도 형식이 틀리면 아무것도 바꾸지 않는다."""
+    """항목들을 바꾼다 → {policy, diff: [{field, label, before, after}], fixed: [고정이라 무시한 항목 이름]}.
+    하나라도 형식이 틀리면 아무것도 바꾸지 않는다. 주식 비중 목표(고정 100%)를 다른 값으로 주면 그 항목만 빼고 fixed 에 적는다 (#43)."""
     if not isinstance(changes, dict) or not changes:
         raise PolicyError("바꿀 항목이 없어요")
     cur = get(conn)
     nxt = {k: v for k, v in cur.items() if k in FIELDS}
+    fixed: list[str] = []
     for field, value in changes.items():
+        if field == "equity_target":  # 고정 100% (예수금 · 채권 · 현금성 상품에 돈을 두지 않는다) — 0 · null 도 바꾸지 않는다
+            if value is None or _number(value) != EQUITY_TARGET_PCT:
+                fixed.append(FIELDS[field]["label"])
+            continue
         v = clean(field, value)
-        if field == "equity_target":  # 고정 — 다른 값을 줘도 100% (예수금 · 채권 · 현금성 상품에 돈을 두지 않는다)
-            v = EQUITY_TARGET_PCT
         if v is None:
             nxt.pop(field, None)
         else:
@@ -170,12 +174,13 @@ def save(conn: sqlite3.Connection, changes: dict, *, by: str, reason: str = "", 
     diff = [{"field": k, "label": FIELDS[k]["label"], "before": show(k, cur.get(k)), "after": show(k, nxt.get(k))}
             for k in FIELDS if cur.get(k) != nxt.get(k)]
     if not diff:
-        return {"policy": cur, "diff": []}
+        return {"policy": cur, "diff": [], "fixed": fixed}
     now = now or market.now_kst()
     at = now.strftime("%Y-%m-%d %H:%M")
     _put(conn, S_POLICY, {**nxt, "updated_at": at, "updated_by": by})
-    _put(conn, S_HISTORY, (history(conn) + [{"at": at, "by": by, "reason": reason.strip()[:300], "changes": diff}])[-HISTORY:])
-    return {"policy": get(conn), "diff": diff}
+    why = reason.strip()[:300] + (f" (고정이라 바꾸지 않음: {', '.join(fixed)})" if fixed else "")  # 기록과 실제 값이 어긋나지 않게
+    _put(conn, S_HISTORY, (history(conn) + [{"at": at, "by": by, "reason": why.strip(), "changes": diff}])[-HISTORY:])
+    return {"policy": get(conn), "diff": diff, "fixed": fixed}
 
 
 def missing(p: dict) -> list[str]:
