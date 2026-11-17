@@ -1,5 +1,6 @@
 import { Fragment, useState } from 'react'
 import { useLoad } from '../../shared/useLoad'
+import { withBase } from '../../shared/base'
 import { investApi, type ScoreKind, type ScoreRow } from './api'
 
 const KINDS: { key: ScoreKind | ''; label: string }[] = [
@@ -108,7 +109,7 @@ export default function Scores() {
           <select value={kind} onChange={(e) => { setKind(e.target.value as ScoreKind | ''); setSelected(null) }} aria-label="판단 종류">
             {KINDS.map((k) => <option key={k.key} value={k.key}>{k.label}</option>)}
           </select>
-          <a className="link-button small" href={`/api/invest/score-runs/export${kind ? `?kind=${kind}` : ''}`}>JSONL 내려받기</a>
+          <a className="link-button small" href={withBase(`/api/invest/score-runs/export${kind ? `?kind=${kind}` : ''}`)}>JSONL 내려받기</a>
         </div>
         {error && <p className="muted small">기록을 받지 못했어요 — 서버를 새 버전으로 다시 시작하면 보여요.</p>}
         {!error && !runs?.length && <p className="muted small">아직 기록이 없어요. 리서치나 회의가 돌면 쌓여요.</p>}
