@@ -1,5 +1,5 @@
 """주문 장부 — 토론에서 나온 수량 안에서만 주문, 같은 실행 · 종목 · 방향의 중복 주문 거절, 오늘 낸 주문이 에이전트에게 보임,
-하루 자동 주문 건수를 안건 문구와 get_trading_limits 가 같은 기준으로."""
+하루 자동 주문 건수를 안건 문구와 get_trading_limits 가 같은 기준으로 (횟수 한도는 없음)."""
 
 import asyncio
 from datetime import datetime, timedelta
@@ -26,16 +26,16 @@ def _run(conn) -> int:
     return rid
 
 
-def _session(conn, rid, sizes=None, max_orders=agents.MAX_ORDERS) -> agents.Session:
-    s = agents.Session(conn=conn, scope={"scope": "stream", "label": "상시 운용", "candidates": [{"symbol": "005930", "name": "삼성전자"}]},
-                       run_id=rid, provider=SampleMarket(), auto_submit=True, max_orders=max_orders)
-    s.gate = {"status": "aligned", "symbols": {}, "aligned": [{"symbol": "005930", "direction": "buy"}]}
+def _session(conn, rid, sizes=None, symbols=("005930",)) -> agents.Session:
+    s = agents.Session(conn=conn, scope={"scope": "stream", "label": "상시 운용", "candidates": [{"symbol": x, "name": x} for x in symbols]},
+                       run_id=rid, provider=SampleMarket(), auto_submit=True)
+    s.gate = {"status": "aligned", "symbols": {}, "aligned": [{"symbol": x, "direction": "buy"} for x in symbols]}
     s.sizes = sizes or {}
     return s
 
 
-def _order(s, quantity):
-    return asyncio.run(agents._handlers(s)["place_order"]({"symbol": "005930", "side": "buy", "quantity": quantity,
+def _order(s, quantity, symbol="005930"):
+    return asyncio.run(agents._handlers(s)["place_order"]({"symbol": symbol, "side": "buy", "quantity": quantity,
                                                            "order_type": "market", "reason": "합의"}))
 
 
@@ -73,7 +73,7 @@ def test_same_run_symbol_side_is_not_ordered_twice(client, conn, broker, now):  
 def test_agents_see_todays_orders_and_one_order_count(client, conn, broker, now):  # noqa: F811
     """보유가 늘어난 이유(오늘 낸 주문 · 실행 번호)가 get_portfolio · get_trading_limits 에 보이고, 하루 건수는 안건 문구와 같은 수."""
     rid = _run(conn)
-    s = _session(conn, rid, max_orders=2)
+    s = _session(conn, rid)
     assert _order(s, 1)["ok"]
     conn.execute("INSERT INTO invest_orders (symbol, name, side, order_type, quantity, status, source, run_id) "
                  "VALUES ('005930', '삼성전자', 'buy', 'market', 9, 'rejected', 'agent', ?)", (rid,))  # 거절은 세지 않는다
@@ -82,17 +82,16 @@ def test_agents_see_todays_orders_and_one_order_count(client, conn, broker, now)
     pf = asyncio.run(h["get_portfolio"]({}))
     assert [(o["symbol"], o["quantity"], o["run_id"]) for o in pf["today_orders"]] == [("005930", 1, rid)]
     lim = asyncio.run(h["get_trading_limits"]({}))
-    assert (lim["orders_this_session"], lim["max_orders_this_session"], lim["orders_left_this_session"]) == (1, 2, 1)
-    assert (lim["agent_orders_today"], lim["max_agent_orders_per_day"], lim["agent_orders_left_today"]) == (1, order_guard.MAX_DAY_ORDERS,
-                                                                                                         order_guard.MAX_DAY_ORDERS - 1)
-    assert "max_orders_per_session" not in lim and lim["today_orders"][0]["order_id"] == pf["today_orders"][0]["order_id"]
+    assert (lim["orders_this_session"], lim["agent_orders_today"]) == (1, 1) and "횟수 한도는 없어요" in lim["order_count_note"]
+    assert not {"max_orders_this_session", "orders_left_this_session", "max_agent_orders_per_day", "agent_orders_left_today"} & set(lim)
+    assert lim["today_orders"][0]["order_id"] == pf["today_orders"][0]["order_id"]
     day = order_guard.day_status(conn)
     text = order_guard.day_text(day)
-    assert f"오늘 남은 자동 주문 {order_guard.MAX_DAY_ORDERS - 1}건" in text
+    assert text == "오늘 낸 자동 주문 1건 · 횟수 한도 없음(금액 한도 · 비중 안에서)"
     assert text in stream.trader_review_prompt(s, "없음", day)                                       # 안건 문구 = 같은 수 · 같은 말
     gate = {"aligned": [{"symbol": "005930", "direction": "buy"}], "symbols": {"005930": {"reason": "r"}}}
     trade = stream.trade_prompt(s, gate, "없음", "계기", day)
-    assert text in trade and "이번 대화 2건까지" in trade
+    assert text in trade and "건까지" not in trade
     assert "두 번 나간 것이 아닙니다" in trade and f"주문 #{pf['today_orders'][0]['order_id']} · 실행 #{rid}" in trade
 
 
@@ -109,3 +108,16 @@ def test_stream_board_carries_proposed_sizes(client, conn):  # noqa: F811
     assert b.sizes("005930", "buy", t + timedelta(minutes=stream.STALE_MIN + 1)) is None              # 오래된 입장은 빠진다
     s = _session(conn, None)
     assert "제안 2주" in agents._statement_text(s, st)
+
+
+def test_no_order_count_limit(client, conn, broker, now):  # noqa: F811
+    """주문 횟수 한도는 없다 — 한 세션에서 네 종목, 하루 일곱 건을 넘겨도 횟수로 거절하지 않는다 (금액 한도 · 종목당 한 번은 그대로)."""
+    syms = ("005930", "000660", "035420", "105560")
+    for _ in range(2):
+        s = _session(conn, _run(conn), symbols=syms)
+        for sym in syms:
+            out = _order(s, 1, sym)
+            assert out["ok"], out
+        assert not _order(s, 1, syms[0])["ok"]                                                    # 종목당 한 번은 그대로
+    assert order_guard.day_status(conn) == {"agent_orders_today": 8}
+
