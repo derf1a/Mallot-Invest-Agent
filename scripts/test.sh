@@ -13,7 +13,9 @@ if [ -d "$ROOT/frontend" ]; then
   echo "[test] frontend: lint"
   (cd "$ROOT/frontend" && npm run lint --silent)
   echo "[test] frontend: typecheck + build"
-  (cd "$ROOT/frontend" && npm run build --silent >/dev/null)
+  # frontend/dist 가 아니라 node_modules/.cache 에 빌드한다 — dist 는 이 컴퓨터의 실서버가 그대로 내보내는 폴더라,
+  # 접두사(/ledger 등) 없이 덮어쓰면 실서비스 화면이 깨진다
+  (cd "$ROOT/frontend" && npm run build --silent -- --outDir node_modules/.cache/test-dist --emptyOutDir >/dev/null)
 fi
 
 echo "[test] 모두 통과"
