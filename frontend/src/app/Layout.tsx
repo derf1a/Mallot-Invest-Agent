@@ -2,11 +2,12 @@ import { useState, type ReactNode } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { investApi } from '../features/invest/api'
 import { systemApi } from '../features/settings/api'
-import { otherApps, portalUrl } from '../shared/otherApp'
+import { portalUrl } from '../shared/otherApp'
 import { useLoad } from '../shared/useLoad'
 import AccessAlerts from './AccessAlerts'
-import BrandMark from './BrandMark'
-import { AgentsIcon, AiIcon, GraphIcon, InvestIcon, PortfolioIcon, SettingsIcon, TeamIcon, TraceIcon, TradesIcon } from './NavIcons'
+import AppMark from './AppMark'
+import AppSwitcher from './AppSwitcher'
+import { AgentsIcon, AiIcon, GraphIcon, InvestIcon, PortfolioIcon, LogoutIcon, SettingsIcon, TeamIcon, TraceIcon, TradesIcon } from './NavIcons'
 
 interface NavItem {
   to: string
@@ -53,8 +54,8 @@ function sections(pilot: ReactNode): NavSection[] {
   ]
 }
 const UTILITY: NavItem[] = [{ to: '/settings', label: 'Settings', icon: <SettingsIcon /> }]
-const OTHER_APPS = otherApps()
-const PORTAL = portalUrl()
+// 한 도메인의 경로(/invest/ 등)면 Mallot 홈 로그인을 같이 쓴다, 하위 도메인 · 포트면 앱마다 따로
+const SWITCH_NOTE = portalUrl() === '/' ? undefined : '로그인은 따로예요'
 const MODE_KO = { continuous: '상시', meetings: '회의' } as const
 
 /** 자동 운용 켜짐 표시 — 꺼져 있으면 아무것도 붙이지 않는다 */
@@ -107,7 +108,7 @@ export default function Layout({ onLogout, viewer }: { onLogout?: () => void; vi
         <button className="menu-button" aria-label="메뉴 열기" aria-expanded={menuOpen} onClick={() => setMenuOpen(true)}>
           ☰
         </button>
-        <BrandMark size={24} />
+        <AppMark app="invest" size={24} />
         <span className="topbar-title">{current?.label ?? 'Mallot Invest'}</span>
         {viewer && <span className="chip readonly-chip">읽기 전용</span>}
       </header>
@@ -116,7 +117,7 @@ export default function Layout({ onLogout, viewer }: { onLogout?: () => void; vi
 
       <nav className={`sidebar${menuOpen ? ' open' : ''}`}>
         <NavLink to="/invest/ai" className="brand" onClick={() => setMenuOpen(false)}>
-          <BrandMark />
+          <AppMark app="invest" />
           <Wordmark />
         </NavLink>
         <div className="nav-main">
@@ -129,19 +130,6 @@ export default function Layout({ onLogout, viewer }: { onLogout?: () => void; vi
         </div>
         <div className="nav-utility">
           {UTILITY.map((item) => link(item, 'small'))}
-          {PORTAL && (
-            <a className="nav-link small app-switch" href={PORTAL} title="Mallot 홈 — 통합 대시보드">
-              <span className="nav-icon" aria-hidden="true">⌂</span>
-              <span>Mallot 홈</span>
-            </a>
-          )}
-          {OTHER_APPS.map((o) => (
-            <a key={o.key} className="nav-link small app-switch" href={o.url} title={o.url.startsWith('/') ? o.label : `${o.label} — 로그인은 따로예요`}>
-              <span className="nav-icon" aria-hidden="true">⇄</span>
-              <span>{o.label}</span>
-            </a>
-          ))}
-          {onLogout && <button className="nav-link small nav-button" onClick={onLogout}>로그아웃</button>}
           {viewer && (
             <>
               <span className="nav-readonly small">읽기 전용 · 손님</span>
@@ -150,15 +138,17 @@ export default function Layout({ onLogout, viewer }: { onLogout?: () => void; vi
             </>
           )}
         </div>
+        <AppSwitcher self="invest" note={SWITCH_NOTE} />
         <footer className="sidebar-footer">
-          <BrandMark size={18} />
-          <span className="footer-text">
-            <span className="footer-version">Mallot Invest v{__APP_VERSION__}</span>
-            <span>
-              build {__GIT_SHA__}
-              {health && ` · db v${health.db_version}`}
-            </span>
+          <span className="footer-text" title={`Mallot Invest v${__APP_VERSION__} · build ${__GIT_SHA__}${health ? ` · DB 스키마 v${health.db_version}` : ''}`}>
+            v{__APP_VERSION__} · {__GIT_SHA__}
+            {health && ` · db v${health.db_version}`}
           </span>
+          {onLogout && (
+            <button className="footer-logout" onClick={onLogout} title="로그아웃" aria-label="로그아웃">
+              <LogoutIcon />
+            </button>
+          )}
         </footer>
       </nav>
 
