@@ -10,6 +10,8 @@
   background: var(--surface);
   border-right: 1px solid var(--border);
   z-index: 20;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .brand { display: flex; align-items: center; gap: 10px; padding: 4px 8px 22px; color: var(--text); text-decoration: none; }
 .brand-mark { flex-shrink: 0; display: block; }
@@ -49,21 +51,31 @@
 .nav-link.small { padding: 6px 12px; font-size: 0.85rem; color: var(--muted); }
 .nav-link.small .nav-icon svg { width: 15px; height: 15px; }
 .nav-link.small.active { color: var(--accent); }
-.sidebar-footer {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  margin-top: 10px;
-  padding: 10px 10px 2px;
-  border-top: 1px solid var(--border);
-  font-family: var(--font-mono);
-  font-size: 0.68rem;
-  color: var(--muted);
-  letter-spacing: -0.01em;
+/* 앱 바꾸기: 홈 · 가계부 · 투자 · 실험실을 아이콘 타일 한 줄로 (지금 앱은 눌린 모양) */
+.app-switcher { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 4px; margin-top: 8px; padding: 4px; border-radius: 12px; background: var(--border); }
+.app-tile {
+  display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 7px 0 6px; border-radius: 9px;
+  color: var(--muted); text-decoration: none; font-family: var(--font-display); font-size: 0.7rem; font-weight: 550; line-height: 1;
 }
-.sidebar-footer .brand-mark { opacity: 0.9; }
-.footer-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; white-space: nowrap; }
-.footer-version { color: var(--text); font-weight: 600; }
+.app-tile .brand-mark { opacity: 0.82; transition: opacity 0.15s ease, transform 0.15s ease; }
+.app-tile:hover { color: var(--text); background: var(--surface); }
+.app-tile:hover .brand-mark { opacity: 1; transform: translateY(-1px); }
+.app-tile:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.app-tile.current { color: var(--text); font-weight: 650; background: var(--bg); box-shadow: 0 1px 2px rgb(0 0 0 / 0.08); }
+.app-tile.current .brand-mark { opacity: 1; }
+/* 버전 한 줄 + 로그아웃 아이콘 — 자세한 건 마우스를 올리면 */
+.sidebar-footer {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; padding: 4px 4px 0 10px;
+  font-family: var(--font-mono); font-size: 0.66rem; color: var(--muted); letter-spacing: -0.01em;
+}
+.footer-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.footer-logout {
+  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 30px; height: 30px; padding: 0;
+  border: 0; border-radius: 8px; background: transparent; color: var(--muted); cursor: pointer;
+}
+.footer-logout svg { width: 16px; height: 16px; }
+.footer-logout:hover { background: var(--border); color: var(--text); }
+.footer-logout:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .content { margin-left: var(--sidebar-width); padding: 24px 32px; max-width: calc(var(--sidebar-width) + 1100px); }
 .topbar, .backdrop { display: none; }
 .nav-group { display: flex; flex-direction: column; gap: 2px; }

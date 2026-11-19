@@ -1,6 +1,6 @@
 /** 관리자 로그인 — 공유 링크 없이 들어온 사람에게 보인다. 손님은 관리자가 준 공유 링크로 들어온다. */
 import { useState } from 'react'
-import BrandMark from '../../app/BrandMark'
+import AppMark from '../../app/AppMark'
 import { authApi, type Me } from './api'
 
 export default function LoginPage({ me, onDone }: { me: Me; onDone: () => void }) {
@@ -23,7 +23,7 @@ export default function LoginPage({ me, onDone }: { me: Me; onDone: () => void }
   return (
     <main className="login-page">
       <form className="card login-card" onSubmit={submit}>
-        <div className="login-brand"><BrandMark size={28} /><b>Mallot Invest</b></div>
+        <div className="login-brand"><AppMark app="invest" size={28} /><b>Mallot Invest</b></div>
         {me.has_password ? (
           <>
             <label className="field">
