@@ -20,3 +20,8 @@ def resources(conn: Conn) -> dict:
 @router.get("/summary")
 def summary(conn: Conn) -> dict:
     return feed.summary(conn)
+
+
+@router.get("/health")
+def health(conn: Conn) -> dict:
+    return feed.health(conn)

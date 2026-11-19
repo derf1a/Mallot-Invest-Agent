@@ -11,6 +11,7 @@ import os
 import resource
 import sqlite3
 import sys
+import tempfile
 import time
 import tomllib
 from datetime import date, datetime, timedelta
@@ -110,6 +111,41 @@ def resources(conn: sqlite3.Connection) -> dict:
         "llm": llm_usage(conn),
         "requests": metrics.snapshot(),
         "runs": runs_overview(conn),
+    }
+
+
+def _since_hours(hours: int) -> str:
+    return (datetime.now() - timedelta(hours=hours)).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def health(conn: sqlite3.Connection) -> dict:
+    """상태 점검 재료 (`/api/feed/health`) — 사실만 주고 정상 · 주의 · 실패 판정은 mallot-home 이 한다.
+
+    PRAGMA quick_check 는 DB 가 크면 몇 초 걸려서 대시보드가 자주 부르는 resources 에는 넣지 않는다.
+    """
+    from app.core.migrations import MIGRATIONS
+
+    try:
+        with tempfile.NamedTemporaryFile(dir=data_dir(), prefix=".health-", delete=True):
+            pass
+        writable = True
+    except OSError:
+        writable = False
+    folder = data_dir() / "backups"
+    backups = sorted(folder.glob("*.db"), key=lambda p: p.stat().st_mtime) if folder.exists() else []
+    llm = conn.execute("SELECT COUNT(*), SUM(1 - ok) FROM llm_usage WHERE created_at >= ?", (_since(1),)).fetchone()
+    return {
+        "app": APP,
+        "integrity": conn.execute("PRAGMA quick_check").fetchone()[0],
+        "schema_version": conn.execute("PRAGMA user_version").fetchone()[0],
+        "schema_latest": len(MIGRATIONS),
+        "data_writable": writable,
+        "last_backup_age_s": int(time.time() - backups[-1].stat().st_mtime) if backups else None,
+        "llm_24h": {"calls": llm[0], "failed": llm[1] or 0},
+        "runs_stuck": conn.execute("SELECT COUNT(*) FROM runs WHERE status = 'running' AND COALESCE(started_at, created_at) < ?",
+                                   (_since_hours(2),)).fetchone()[0],
+        "runs_failed_24h": conn.execute("SELECT COUNT(*) FROM runs WHERE status = 'failed' AND created_at >= ?",
+                                        (_since(1),)).fetchone()[0],
     }
 
 
